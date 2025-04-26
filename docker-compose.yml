@@ -15,7 +15,7 @@ services:
         USER_GID: ${GID}
     volumes:
       - shellhistory:/dc/shellhistory
-      - vscode-server:/workspaces/.vscode-server
+      - vscode-server:/home/devuser/.vscode-server
       - .:/workspace
     # Ensure the container uses the same user IDs to avoid permission issues
     user: devuser

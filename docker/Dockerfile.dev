@@ -36,6 +36,13 @@ VOLUME ["/dc/shellhistory"]
 RUN mkdir -p /dc/shellhistory && \
     chown -R devuser:devuser /dc/shellhistory
 
+
+VOLUME ["/home/devuser/.vscode-server"]
+RUN mkdir -p /home/devuser/.vscode-server && \
+    chown -R devuser:devuser /home/devuser/.vscode-server && \
+    chmod -R 777 /home/devuser/.vscode-server
+    
+
 # Switch to non-root user
 USER devuser
 
