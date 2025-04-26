@@ -1,0 +1,32 @@
+services:
+  dev:
+    env_file:
+      - .env.shared
+      - .env.override
+    environment:
+      LANG: en_US.UTF-8
+      LANGUAGE: en_US:en
+      LC_ALL: en_US.UTF-8
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.dev
+      args:
+        USER_UID: ${UID}
+        USER_GID: ${GID}
+    volumes:
+      - shellhistory:/dc/shellhistory
+      - vscode-server:/workspaces/.vscode-server
+      - .:/workspace
+    # Ensure the container uses the same user IDs to avoid permission issues
+    user: devuser
+    ulimits:
+      core: -1 # set the coredump size limit to unlimited
+    security_opt:
+      - seccomp:unconfined
+    working_dir: /workspace
+    command: sleep infinity
+
+
+volumes:
+  shellhistory:
+  vscode-server:

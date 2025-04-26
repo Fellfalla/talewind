@@ -1,0 +1,75 @@
+FROM ubuntu:24.04
+LABEL maintainer="@fellfalla"
+
+# Non-interactive installs
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install development essentials
+RUN apt-get update && \
+    apt-get install -y sudo git curl nano && \
+    rm -rf /var/lib/apt/lists/*
+
+##### Setup User Environment #####
+# Create group and user matching host IDs
+
+# Configure build-time arguments for mapping host UID/GID
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN echo "USER_UID=${USER_UID}"
+RUN echo "USER_GID=${USER_GID}"
+
+RUN groupadd --gid ${USER_GID} devuser && \
+    useradd --uid ${USER_UID} --gid ${USER_GID} -m devuser && \
+    echo "devuser ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devuser && \
+    chmod 0440 /etc/sudoers.d/devuser
+
+# Set working directory
+WORKDIR /workspace
+
+# Create zsh cli
+RUN apt-get update && \
+    apt-get install -y zsh && \
+    rm -rf /var/lib/apt/lists/*
+
+# Switch to non-root user
+USER devuser
+
+# Uses "git", "ssh-agent" and "history-substring-search" bundled plugins
+RUN curl -L https://github.com/deluan/zsh-in-docker/releases/download/v1.2.1/zsh-in-docker.sh | \
+    sh -s -- \
+    -t agnoster \
+    -p zsh-autosuggestions \
+    -p zsh-syntax-highlighting \
+    -p zsh-history-substring-search \
+    -p zsh-completions \
+    -p zsh-256color \
+    -p zsh-history \
+    -p git \
+    -p ssh-agent
+
+# # Setup zsh
+# RUN chsh -s $(which zsh) && \
+#     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/959b6cf5eed78f108dc6e0f46b53816f5168dd3a/tools/install.sh)" "" --unattended && \
+#     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions && \
+#     sed -i 's/robbyrussell/agnoster/g' $HOME/.zshrc && \
+#     sed -i 's/^\(plugins=(\)/\1git zsh-autosuggestions /g' $HOME/.zshrc
+
+# # Setup shell history similar to vscode devcontainer
+# # https://github.com/stuartleeks/dev-container-features/blob/main/src/shell-history/install.sh
+# RUN cat <<eozshrc >> $HOME/.zshrc
+# # configure zsh to save history into the docker volume
+# export HISTFILE=/dc/shellhistory/.zsh_history
+# export HISTSIZE=10000
+# export SAVEHIST=10000
+# setopt appendhistory
+# fpath+=(/usr/share/zsh/site-functions)
+# zstyle ":completion:*" use-cache on
+# zstyle ":completion:*" cache-path ~/.zsh/cache
+# autoload -U compinit && compinit
+# eozshrc
+
+VOLUME ["/dc/shellhistory"]
+
+
+# Set the default shell to zsh
+ENV SHELL=/bin/zsh
