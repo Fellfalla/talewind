@@ -31,6 +31,11 @@ RUN apt-get update && \
     apt-get install -y zsh && \
     rm -rf /var/lib/apt/lists/*
 
+
+VOLUME ["/dc/shellhistory"]
+RUN mkdir -p /dc/shellhistory && \
+    chown -R devuser:devuser /dc/shellhistory
+
 # Switch to non-root user
 USER devuser
 
@@ -42,19 +47,12 @@ RUN curl -L https://github.com/deluan/zsh-in-docker/releases/download/v1.2.1/zsh
     -p history \
     -p git \
     -p ssh-agent \
+    -p zsh-autosuggestions \
     -a 'export HISTFILE=/dc/shellhistory/.zsh_history' \
     -a 'export HISTSIZE=10000' \
     -a 'export SAVEHIST=10000' \
-    -a 'setopt appendhistory' \
-    -a 'fpath+=(/usr/share/zsh/site-functions)' \
-    -a 'zstyle ":completion:*" use-cache on' \
-    -a 'zstyle ":completion:*" cache-path ~/.zsh/cache' \
-    -a 'autoload -U compinit && compinit'
-
-
-
-VOLUME ["/dc/shellhistory"]
-
+    -a 'setopt appendhistory' && \
+    git clone --branch v0.7.1 https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 
 # Set the default shell to zsh
 ENV SHELL=/bin/zsh
