@@ -1,0 +1,1 @@
+UID=$(id -u) GID=$(id -g) docker compose  --env-file .env.shared --env-file .env.override up -d --build --force-recreate --remove-orphans
