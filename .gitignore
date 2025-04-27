@@ -180,3 +180,7 @@ cython_debug/
 # pixi environments
 .pixi
 *.egg-info
+checkpoints_v2
+resources
+outputs_v2
+processed
