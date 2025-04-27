@@ -22,6 +22,13 @@ Er verkauft Mettbrote – diesmal mit Qualitätssiegel – und murmelt manchmal 
 audio_player = tts.create_audio_player()
 
 async def main():
+    # Initialize audio lock to serialize playback
+    audio_lock = asyncio.Lock()
+
+    async def speak_locked(text: str, voice: str, instructions: str):
+        async with audio_lock:
+            await tts.speak(text=text, voice=voice, instructions=instructions, audio_player=audio_player)
+
     # 1. Take the user input and forward it to ollama
 
     # # 2. Get the response from ollama
@@ -36,31 +43,37 @@ async def main():
     # )
 
     while True:
-        user_input = input("You: ")
+        user_input = await asyncio.to_thread(input, "You: ")
         if user_input.lower() in ["exit", "quit"]:
             break
 
-        # 4. Get the response from ollama
-        narrator_response = f"User said: {user_input}. Now, let me respond to that."
 
         # 5. Play the response using the TTS interface
-        await tts.speak(
-            text=user_input,
-            voice=tts.VOICE_PLAYER,
-            instructions="Excited and curious. Full of expectation and being adventurous.",
-            audio_player=audio_player,
+        player_task = asyncio.create_task(
+            speak_locked(
+                text=user_input,
+                voice=tts.VOICE_PLAYER,
+                instructions="Excited and curious. Full of expectation and being adventurous.",
+            )
         )
 
+        # 4. Get the response from ollama
         print("Narrator: ", end="")
-        async for chunk in create_response(narrator_response):
+        async for chunk in create_response(user_input):
             print(chunk.content, end="", flush=True)
-            await tts.speak(
-                text=chunk.content,
-                voice=tts.VOICE_NARRATOR,
-                instructions=chunk.voice,
-                audio_player=audio_player,
+            # Queue narrator speech without overlapping audio
+            asyncio.create_task(
+                speak_locked(
+                    text=chunk.content,
+                    voice=tts.VOICE_NARRATOR,
+                    instructions=chunk.voice,
+                )
             )
+
         print("")
+
+        await player_task
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -29,10 +29,10 @@ Regeln:
 * Bei Unklarheit ist deine Proaktivität gefragt. Es ist zu jedem Zeitpunkt verboten die Spieler danach zu fragen, was als nächstes passiert. Das ist deine Aufgabe als spielleiter Schleifen und Sackgassen nach gewisser Zeit mit kreativen Optionen zu lösen.
 * Sorge dafür dass alle spieler regelmäßig an die Reihe kommen, indem du bei Sie langer Inaktivität explizit zur Aktion aufforderst.
 
-Beschreibe den Stil deiner stimme, z.b: freundlich, aufgeregt, schreiend, kreischend, spannend, mysterioes, flüstern, laut, leise, schockiert, und so weiter.
 """
+# Beschreibe den Stil deiner stimme, z.b: freundlich, aufgeregt, schreiend, kreischend, spannend, mysterioes, flüstern, laut, leise, schockiert, und so weiter.
 
-VOICE_DEFAULT = "Strong deep voice in narrator style. Mystic and enthusiastic about adventure. Creating tension."
+VOICE_DEFAULT = "strong voice, sarcastic, with a touch of black mockery. A strongly rolling r like a pirate RRRRR"
 
 class MasterResponse(BaseModel):
     content: str
@@ -51,7 +51,6 @@ async def create_response(request: str) -> AsyncGenerator[MasterResponse, None]:
 
     buffer = ""
     for event in stream:
-        
         if hasattr(event, "response") and hasattr(event.response, "output_text"):
             buffer += event.response.output_text
             while '.' in buffer:
