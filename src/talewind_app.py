@@ -65,7 +65,7 @@ async def main():
         print("Narrator: ", end="")
         total_message = ""
         async for chunk in create_response(user_input):
-            print(chunk.content, end=" ", flush=True)
+            print(chunk.content, end="", flush=True)
             # NOTE: find a way to have coherent voice style accross sentences in chunk mode
             total_message += chunk.content
 
