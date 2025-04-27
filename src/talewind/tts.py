@@ -25,10 +25,21 @@ VIBE_DUNGEON_MASTER_STRONG: Final = """
 Agressive and shouting like a metal singer.
 """
 
-def create_audio_player() -> LocalAudioPlayer:
-    return LocalAudioPlayer()
 
-async def speak(text: str, instructions: str, voice: str, audio_player: LocalAudioPlayer) -> None:
+class LockedAudioPlayer:
+    """todo: create based class for audio player"""
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.audio_player = LocalAudioPlayer()
+
+    async def play(self, response: Any) -> None:
+        async with self.lock:
+            await self.audio_player.play(response)
+
+def create_audio_player() -> LockedAudioPlayer:
+    return LockedAudioPlayer()
+
+async def speak(text: str, instructions: str, voice: str, audio_player: LockedAudioPlayer) -> None:
     async with openai.audio.speech.with_streaming_response.create(
         model="gpt-4o-mini-tts",
         voice=voice,

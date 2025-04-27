@@ -23,11 +23,10 @@ audio_player = tts.create_audio_player()
 
 async def main():
     # Initialize audio lock to serialize playback
-    audio_lock = asyncio.Lock()
-
-    async def speak_locked(text: str, voice: str, instructions: str):
-        async with audio_lock:
-            await tts.speak(text=text, voice=voice, instructions=instructions, audio_player=audio_player)
+    
+    # NOTE: create class for task queues, which makes sure they are worked off in order and cleaned properly
+    narrator_tasks = []
+    player_tasks = []
 
     # 1. Take the user input and forward it to ollama
 
@@ -47,32 +46,44 @@ async def main():
         if user_input.lower() in ["exit", "quit"]:
             break
 
+        ##### Play the response using the TTS interface
 
-        # 5. Play the response using the TTS interface
-        player_task = asyncio.create_task(
-            speak_locked(
+        # wait for previous player tasks to finish
+        await asyncio.gather(*player_tasks, return_exceptions=True)
+        player_tasks.clear()
+        
+        player_tasks.append(asyncio.create_task(
+            tts.speak(
                 text=user_input,
                 voice=tts.VOICE_PLAYER,
                 instructions="Excited and curious. Full of expectation and being adventurous.",
+                audio_player=audio_player,
             )
-        )
+        ))
 
-        # 4. Get the response from ollama
+        ##### Get the game master response
         print("Narrator: ", end="")
+        total_message = ""
         async for chunk in create_response(user_input):
-            print(chunk.content, end="", flush=True)
-            # Queue narrator speech without overlapping audio
-            asyncio.create_task(
-                speak_locked(
-                    text=chunk.content,
-                    voice=tts.VOICE_NARRATOR,
-                    instructions=chunk.voice,
-                )
+            print(chunk.content, end=" ", flush=True)
+            # NOTE: find a way to have coherent voice style accross sentences in chunk mode
+            total_message += chunk.content
+
+        # wait for previous narrator tasks to finish
+        await asyncio.gather(*narrator_tasks, return_exceptions=True)
+        narrator_tasks.clear()
+
+        # Queue narrator speech without overlapping audio
+        narrator_tasks.append(asyncio.create_task(
+            tts.speak(
+                text=total_message,
+                voice=tts.VOICE_NARRATOR,
+                instructions=chunk.voice,
+                audio_player=audio_player,
             )
+        ))
 
         print("")
-
-        await player_task
 
 
 if __name__ == "__main__":
