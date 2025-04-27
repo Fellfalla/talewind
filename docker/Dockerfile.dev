@@ -65,8 +65,11 @@ RUN mkdir -p /home/${USERNAME}/.vscode-server && \
 # Switch to non-root user
 USER ${USERNAME}
 
-# Install pixi
+# Install pixi NOTE: move into production docker
 RUN curl -fsSL https://pixi.sh/install.sh | sh
+
+# Install ollama NOTE: move into production docker
+RUN curl -fsSL https://ollama.com/install.sh | sh
 
 # Add USERNMAE to audio group
 RUN sudo usermod -aG audio ${USERNAME}

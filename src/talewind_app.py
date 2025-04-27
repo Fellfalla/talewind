@@ -1,5 +1,6 @@
 import asyncio
 from talewind import tts
+from talewind.master import create_response
 
 print("Welcome to Talewind!")
 
@@ -18,20 +19,21 @@ Schubidu ist der Star des „Handstand-Express“, einer fahrenden Handstand-Sho
 Und Sarkus Möder?
 Er verkauft Mettbrote – diesmal mit Qualitätssiegel – und murmelt manchmal grimmig:
 """
+audio_player = tts.create_audio_player()
+
 async def main():
     # 1. Take the user input and forward it to ollama
 
-    # 2. Get the response from ollama
-    narrator_response = "Hi, im the narrator. Lets dive into an adventure full of chaos!"
+    # # 2. Get the response from ollama
+    # narrator_response = "Hi, im the narrator. Lets dive into an adventure full of chaos!"
 
-    # 3. Play the response using the TTS interface
-    audio_player = tts.create_audio_player()
-    await tts.speak(
-        text=EPILOGUE,
-        voice=tts.VOICE_NARRATOR,
-        instructions=tts.VIBE_DUNGEON_MASTER_STRONG,
-        audio_player=audio_player,
-    )
+    # # 3. Play the response using the TTS interface
+    # await tts.speak(
+    #     text=narrator_response,
+    #     voice=tts.VOICE_NARRATOR,
+    #     instructions=tts.VIBE_DUNGEON_MASTER_STRONG,
+    #     audio_player=audio_player,
+    # )
 
     while True:
         user_input = input("You: ")
@@ -49,12 +51,16 @@ async def main():
             audio_player=audio_player,
         )
 
-        await tts.speak(
-            text="Hi, im still the narrator and currently unfortunately my brain is missing.",
-            voice=tts.VOICE_NARRATOR,
-            instructions=tts.VIBE_DUNGEON_MASTER_STRONG,
-            audio_player=audio_player,
-        )
+        print("Narrator: ", end="")
+        async for chunk in create_response(narrator_response):
+            print(chunk.content, end="", flush=True)
+            await tts.speak(
+                text=chunk.content,
+                voice=tts.VOICE_NARRATOR,
+                instructions=chunk.voice,
+                audio_player=audio_player,
+            )
+        print("")
 
 if __name__ == "__main__":
     asyncio.run(main())
