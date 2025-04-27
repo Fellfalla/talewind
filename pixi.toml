@@ -9,7 +9,8 @@ version = "0.1.0"
 format = "ruff check --select I --fix && ruff format"
 lint = "ruff check"
 lemonfox = "python src/examples/lemonfox.py"
-openai_tts = "python src/examples/openai_tts.py"
+talewind_app = "python src/talewind_app.py"
+
 
 [dependencies]
 python = "3.12.*"
@@ -19,3 +20,4 @@ pyaudio = ">=0.2.14,<0.3"
 
 [pypi-dependencies]
 openai = { version = "*", extras = ["voice-helpers"] }
+# talewind = { path = "./src/talewind", editable = true }
