@@ -10,9 +10,5 @@ format = "ruff check --select I --fix && ruff format"
 lint = "ruff check"
 
 [dependencies]
-python = "3.9.*"
+python = "3.12.*"
 ruff = ">=0.11.7,<0.12"
-
-[pypi-dependencies]
-myshell-openvoice = { git = "https://github.com/myshell-ai/OpenVoice.git" }
-melotts = { git = "https://github.com/myshell-ai/MeloTTS.git" }
