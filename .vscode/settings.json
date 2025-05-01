@@ -3,5 +3,15 @@
   "editor.defaultFormatter": "charliermarsh.ruff",
   "editor.codeActionsOnSave": {
     "source.fixAll.ruff": "explicit"
-  }
+  },
+  "ruff.lineLength": 100,
+  "python.defaultInterpreterPath": "${workspaceFolder}/.pixi/envs/default/bin/python",
+  "search.exclude": {
+    "**/.git/**": true,
+    "**/.pixi/**": true
+  },
+  "files.watcherExclude": {
+      "**/.git/**": true,
+      "**/.pixi/**": true
+  } 
 }
