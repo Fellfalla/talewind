@@ -13,5 +13,5 @@
   "files.watcherExclude": {
       "**/.git/**": true,
       "**/.pixi/**": true
-  } 
+  }
 }
