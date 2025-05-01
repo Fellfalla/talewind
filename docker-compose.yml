@@ -14,11 +14,16 @@ services:
         USER_UID: ${UID}
         USER_GID: ${GID}
     volumes:
+      # devcontainer
       - shellhistory:/dc/shellhistory
       - vscode-server:/home/devuser/.vscode-server
       - .:/workspace
+    devices:
+      - /dev/snd:/dev/snd
     # Ensure the container uses the same user IDs to avoid permission issues
     user: devuser
+    group_add:
+      - audio
     ulimits:
       core: -1 # set the coredump size limit to unlimited
     security_opt:
