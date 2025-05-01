@@ -362,7 +362,6 @@ def setup_game():
         except ValueError:
             console.print("[red]Invalid input. Please enter a number.[/]")
 
-    default_voice_index = 0
     for i in range(num_players):
         player_name = ""
         while not player_name:
@@ -557,9 +556,9 @@ if __name__ == "__main__":
         game_loop()
     except KeyboardInterrupt:
         console.print("\n[bold red]Game interrupted by user (Ctrl+C). Exiting.[/]")
-    except Exception as e:
+    except Exception:
         console.print(
-            f"\n[bold red]An unexpected critical error occurred in the main execution:[/]"
+            "\n[bold red]An unexpected critical error occurred in the main execution:[/]"
         )
         # Print detailed traceback for debugging
         console.print(traceback.format_exc())

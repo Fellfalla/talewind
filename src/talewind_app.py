@@ -28,7 +28,6 @@ async def main():
 
     # NOTE: create class for task queues, which makes sure they are worked off in order and cleaned properly
     narrator_tasks = []
-    player_tasks = []
 
     # 1. Take the user input and forward it to ollama
 

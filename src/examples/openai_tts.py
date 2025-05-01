@@ -1,6 +1,7 @@
 from pathlib import Path
-from openai import OpenAI
 from typing import Final
+
+from openai import OpenAI
 
 SAMPLE: Final = """
 Its so nice to be here. lets go and enjoy the sun. And please lets stop fighting. i dont like that.
@@ -12,6 +13,7 @@ from openai.helpers import LocalAudioPlayer
 
 openai = AsyncOpenAI()
 
+
 async def main() -> None:
     async with openai.audio.speech.with_streaming_response.create(
         model="gpt-4o-mini-tts",
@@ -21,6 +23,7 @@ async def main() -> None:
         response_format="pcm",
     ) as response:
         await LocalAudioPlayer().play(response)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
