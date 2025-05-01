@@ -1,4 +1,5 @@
 import asyncio
+
 from talewind import tts
 from talewind.master import create_response
 
@@ -21,9 +22,10 @@ Er verkauft Mettbrote – diesmal mit Qualitätssiegel – und murmelt manchmal 
 """
 audio_player = tts.create_audio_player()
 
+
 async def main():
     # Initialize audio lock to serialize playback
-    
+
     # NOTE: create class for task queues, which makes sure they are worked off in order and cleaned properly
     narrator_tasks = []
     player_tasks = []
@@ -62,14 +64,16 @@ async def main():
             narrator_tasks.clear()
 
             # Queue narrator speech without overlapping audio
-            narrator_tasks.append(asyncio.create_task(
-                tts.speak(
-                    text=total_message,
-                    voice=tts.VOICE_NARRATOR,
-                    instructions=chunk.voice,
-                    audio_player=audio_player,
+            narrator_tasks.append(
+                asyncio.create_task(
+                    tts.speak(
+                        text=total_message,
+                        voice=tts.VOICE_NARRATOR,
+                        instructions=chunk.voice,
+                        audio_player=audio_player,
+                    )
                 )
-            ))
+            )
 
             print("")
         except KeyboardInterrupt:

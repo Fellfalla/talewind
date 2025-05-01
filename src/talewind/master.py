@@ -1,9 +1,10 @@
 from openai import OpenAI
 from pydantic import BaseModel
+
 client = OpenAI()
 from typing import AsyncGenerator
-LLM_MODEL = "o4-mini"  # Or "gpt-3.5-turbo" or other compatible models
 
+LLM_MODEL = "o4-mini"  # Or "gpt-3.5-turbo" or other compatible models
 
 
 SYSTEM_PROMPT = """
@@ -32,7 +33,7 @@ Regeln:
 """
 # Beschreibe den Stil deiner stimme, z.b: freundlich, aufgeregt, schreiend, kreischend, spannend, mysterioes, flüstern, laut, leise, schockiert, und so weiter.
 
-# Strong voice with a touch of black mockery. Mysterious and tensing way of speaking, high variance in pitch. Rolling R like a pirate. 
+# Strong voice with a touch of black mockery. Mysterious and tensing way of speaking, high variance in pitch. Rolling R like a pirate.
 VOICE_DEFAULT = """
 Tone: Dark voice, Mysterious and mocking. High variance in pitch.
 
@@ -45,21 +46,23 @@ Emphasis: Highlight dark humor, vocals, names, and actions.
 Pronunciation: Very literal pronounciation with very strong rolling every single R in each word.
 """
 
+
 class MasterResponse(BaseModel):
     content: str
     voice: str
 
+
 memory = []
-memory_size_limit = 20 # NOTE: instead of trimming, compress the memory
+memory_size_limit = 20  # NOTE: instead of trimming, compress the memory
+
 
 async def create_response(request: str) -> AsyncGenerator[MasterResponse, None]:
     global memory
     memory.append({"role": "user", "content": request})
-    
+
     # Limit memory size
     if len(memory) > memory_size_limit:
         memory = memory[-memory_size_limit:]
-
 
     stream = client.responses.create(
         model=LLM_MODEL,
@@ -70,7 +73,7 @@ async def create_response(request: str) -> AsyncGenerator[MasterResponse, None]:
         stream=True,
     )
 
-    full_answer = "" 
+    full_answer = ""
     buffer = ""
     mode = "immediate"  # or "buffered"
     if mode == "immediate":
@@ -82,13 +85,12 @@ async def create_response(request: str) -> AsyncGenerator[MasterResponse, None]:
         for event in stream:
             if hasattr(event, "response") and hasattr(event.response, "output_text"):
                 buffer += event.response.output_text
-                while '.' in buffer:
-                    sentence, buffer = buffer.split('.', 1)
-                full_answer += sentence.strip() + '. '
-                yield MasterResponse(content=sentence.strip() + '. ', voice=VOICE_DEFAULT)
+                while "." in buffer:
+                    sentence, buffer = buffer.split(".", 1)
+                full_answer += sentence.strip() + ". "
+                yield MasterResponse(content=sentence.strip() + ". ", voice=VOICE_DEFAULT)
     else:
         raise ValueError("Invalid mode. Use 'immediate' or 'buffered'.")
-    
 
     # Yield any remaining text in the buffer as the final sentence
     if buffer:

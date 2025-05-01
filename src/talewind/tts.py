@@ -1,6 +1,5 @@
-from typing import Final, Any
-
 import asyncio
+from typing import Any, Final
 
 from openai import AsyncOpenAI
 from openai.helpers import LocalAudioPlayer
@@ -29,6 +28,7 @@ Agressive and shouting like a metal singer.
 
 class LockedAudioPlayer:
     """todo: create based class for audio player"""
+
     def __init__(self):
         self.lock = asyncio.Lock()
         self.audio_player = LocalAudioPlayer()
@@ -37,8 +37,10 @@ class LockedAudioPlayer:
         async with self.lock:
             await self.audio_player.play(response)
 
+
 def create_audio_player() -> LockedAudioPlayer:
     return LockedAudioPlayer()
+
 
 async def speak(text: str, instructions: str, voice: str, audio_player: LockedAudioPlayer) -> None:
     async with openai.audio.speech.with_streaming_response.create(
