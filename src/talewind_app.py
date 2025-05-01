@@ -25,10 +25,12 @@ async def main():
             ##### Get the game master response
             print("Narrator: ", end="")
             total_message = ""
+            voice_instructions = tts.VIBE_DUNGEON_MASTER_DEFAULT
             async for chunk in create_response(user_input):
                 print(chunk.content, end="", flush=True)
                 # NOTE: find a way to have coherent voice style accross sentences in chunk mode
                 total_message += chunk.content
+                voice_instructions = chunk.voice
 
             # wait for previous narrator tasks to finish
             await asyncio.gather(*narrator_tasks, return_exceptions=True)
@@ -40,7 +42,7 @@ async def main():
                     tts.speak(
                         text=total_message,
                         voice=tts.VOICE_NARRATOR,
-                        instructions=chunk.voice,
+                        instructions=voice_instructions,
                         audio_player=audio_player,
                     )
                 )
