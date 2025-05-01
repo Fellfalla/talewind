@@ -43,7 +43,7 @@ Emotion: Engaging and determined.
 
 Emphasis: Highlight dark humor, vocals, names, and actions.
 
-Pronunciation: Very literal pronounciation with very strong rolling every single R in each word.
+Pronunciation: Very literal pronunciation with very strong rolling every single R in each word.
 """
 
 
