@@ -42,48 +42,42 @@ async def main():
     # )
 
     while True:
-        user_input = await asyncio.to_thread(input, "You: ")
-        if user_input.lower() in ["exit", "quit"]:
+        try:
+            user_input = await asyncio.to_thread(input, "You: ")
+            if user_input.lower() in ["exit", "quit"]:
+                break
+
+            ##### Play the response using the TTS interface
+
+            ##### Get the game master response
+            print("Narrator: ", end="")
+            total_message = ""
+            async for chunk in create_response(user_input):
+                print(chunk.content, end="", flush=True)
+                # NOTE: find a way to have coherent voice style accross sentences in chunk mode
+                total_message += chunk.content
+
+            # wait for previous narrator tasks to finish
+            await asyncio.gather(*narrator_tasks, return_exceptions=True)
+            narrator_tasks.clear()
+
+            # Queue narrator speech without overlapping audio
+            narrator_tasks.append(asyncio.create_task(
+                tts.speak(
+                    text=total_message,
+                    voice=tts.VOICE_NARRATOR,
+                    instructions=chunk.voice,
+                    audio_player=audio_player,
+                )
+            ))
+
+            print("")
+        except KeyboardInterrupt:
+            print("\nExiting...")
             break
-
-        ##### Play the response using the TTS interface
-
-        # wait for previous player tasks to finish
-        await asyncio.gather(*player_tasks, return_exceptions=True)
-        player_tasks.clear()
-        
-        player_tasks.append(asyncio.create_task(
-            tts.speak(
-                text=user_input,
-                voice=tts.VOICE_PLAYER,
-                instructions="Excited and curious. Full of expectation and being adventurous.",
-                audio_player=audio_player,
-            )
-        ))
-
-        ##### Get the game master response
-        print("Narrator: ", end="")
-        total_message = ""
-        async for chunk in create_response(user_input):
-            print(chunk.content, end="", flush=True)
-            # NOTE: find a way to have coherent voice style accross sentences in chunk mode
-            total_message += chunk.content
-
-        # wait for previous narrator tasks to finish
-        await asyncio.gather(*narrator_tasks, return_exceptions=True)
-        narrator_tasks.clear()
-
-        # Queue narrator speech without overlapping audio
-        narrator_tasks.append(asyncio.create_task(
-            tts.speak(
-                text=total_message,
-                voice=tts.VOICE_NARRATOR,
-                instructions=chunk.voice,
-                audio_player=audio_player,
-            )
-        ))
-
-        print("")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            continue
 
 
 if __name__ == "__main__":

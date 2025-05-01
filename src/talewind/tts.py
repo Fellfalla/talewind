@@ -21,6 +21,7 @@ Phrasing: Clear and concise, using customer-friendly language that avoids jargon
 
 Tone: Empathetic and solution-focused, emphasizing both understanding and proactive assistance.
 """
+
 VIBE_DUNGEON_MASTER_STRONG: Final = """
 Agressive and shouting like a metal singer.
 """
