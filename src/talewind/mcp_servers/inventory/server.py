@@ -22,7 +22,7 @@ class Inventory:
 
 
 # stick to simple list as number of inventories are not expected to be large
-_inventories: dict[Inventory] = []
+_inventories: list[Inventory] = []
 
 mcp = FastMCP("inventory")
 
