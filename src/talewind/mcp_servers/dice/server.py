@@ -17,7 +17,7 @@ async def roll_dice(n_sides: int) -> int:
         int: The result of the dice roll.
     """
     if n_sides <= 0:
-        return "Number of ssides must be a positive integer."
+        return "Number of sides must be a positive integer."
 
     return random.randint(1, n_sides)
 
