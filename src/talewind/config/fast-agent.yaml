@@ -1,0 +1,18 @@
+
+default_model: "openai.gpt-4o"
+
+openai:
+  reasoning_effort: "medium"  # Default reasoning effort: "low", "medium", or "high"
+
+mcp:
+  servers:
+    inventory:
+      transport: "stdio"  # "stdio" or "sse"
+      command: "pixi"  # Command to execute
+      args: ["run", "python", "src/talewind/mcp_servers/inventory/server.py"]  # Command arguments as array
+      read_timeout_seconds: 3.0  # Optional timeout in seconds
+    dice:
+      transport: "stdio"  # "stdio" or "sse"
+      command: "pixi"  # Command to execute
+      args: ["run", "python", "src/talewind/mcp_servers/dice/server.py"]  # Command arguments as array
+      read_timeout_seconds: 3.0  # Optional timeout in seconds

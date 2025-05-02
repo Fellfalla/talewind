@@ -1,6 +1,7 @@
 import asyncio
 from talewind import tts
 from talewind.mcp_servers.mcp_facade import McpFacade
+from talewind.master import Agent
 from mcp_agent.core.fastagent import FastAgent
 from talewind.tts import LockedAudioPlayer
 
@@ -75,7 +76,7 @@ fast = FastAgent("master", config_path="src/talewind/config/fast-agent.yaml")
 
 @fast.agent(
     name="master",
-    instruction="Du bist der inventarverwalter",
+    instruction=Agent.DEFAULT_SYSTEM_PROMPT,
     model="openai.gpt-4o",
     servers=["inventory", "dice"],
     human_input=True,
