@@ -13,11 +13,12 @@ talewind_app = "python src/talewind_app.py"
 
 
 [dependencies]
-python = "3.12.*"
-ruff = ">=0.11.7,<0.12"
-portaudio = ">=19.7.0,<20"
+python = ">=3.13.3,<3.14"
+ruff = ">=0.11.8,<0.12"
 pyaudio = ">=0.2.14,<0.3"
+mpc = ">=1.3.1,<2"
 
 [pypi-dependencies]
-openai = { version = "*", extras = ["voice-helpers"] }
+openai = { version = ">=1.77.0, <2", extras = ["voice-helpers"] }
+fast-agent-mcp = ">=0.2.20, <0.3"
 # talewind = { path = "./src/talewind", editable = true }

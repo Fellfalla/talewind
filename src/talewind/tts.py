@@ -3,8 +3,9 @@ from typing import Any, Final
 
 from openai import AsyncOpenAI
 from openai.helpers import LocalAudioPlayer
+import openai
 
-openai = AsyncOpenAI()
+async_openai = AsyncOpenAI()
 
 VOICE_NARRATOR: Final = "ash"
 VOICE_PLAYER: Final = "echo"
@@ -43,11 +44,14 @@ def create_audio_player() -> LockedAudioPlayer:
 
 
 async def speak(text: str, instructions: str, voice: str, audio_player: LockedAudioPlayer) -> None:
-    async with openai.audio.speech.with_streaming_response.create(
-        model="gpt-4o-mini-tts",
-        voice=voice,
-        input=text,
-        instructions=instructions,
-        response_format="pcm",
-    ) as response:
-        await audio_player.play(response)
+    try:
+        async with async_openai.audio.speech.with_streaming_response.create(
+            model="gpt-4o-mini-tts",
+            voice=voice,
+            input=text,
+            instructions=instructions,
+            response_format="pcm",
+        ) as response:
+            await audio_player.play(response)
+    except openai.APIConnectionError as e:
+        print(f"[ERROR] {e}")
