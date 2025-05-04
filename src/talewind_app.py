@@ -4,6 +4,7 @@ from talewind.mcp_servers.mcp_facade import McpFacade
 from talewind.master import Agent
 from mcp_agent.core.fastagent import FastAgent
 from talewind.tts import LockedAudioPlayer
+from talewind import agent_prompts
 
 audio_player = tts.create_audio_player()
 
@@ -37,14 +38,18 @@ async def story_loop(agent: FastAgent):
 
                 ##### Get the game master response
                 print("Narrator: ", end="")
-                total_message = await agent_app.send(user_input, agent_name="master")
-                # total_message = await agent_app.prompt("master")
+                game_master_instructions = await agent_app.send(user_input, agent_name="master")
+
+                narration = await agent_app.send(
+                    f"[Player]: {user_input}\n\n[Game Master]: {game_master_instructions}",
+                    agent_name="narrator",
+                )
 
                 await tts_queue.put(
                     AudioRequest(
-                        text=total_message,
+                        text=narration,
                         voice=tts.VOICE_NARRATOR,
-                        tonality=tts.VIBE_DUNGEON_MASTER_DEFAULT,
+                        tonality=tts.TONALITY_NARRATOR_DEFAULT,
                     )
                 )
 
@@ -76,10 +81,17 @@ fast = FastAgent("master", config_path="src/talewind/config/fast-agent.yaml")
 
 @fast.agent(
     name="master",
-    instruction=Agent.DEFAULT_SYSTEM_PROMPT,
+    instruction=agent_prompts.GAME_MASTER_INSTRUCTIONS,
     model="openai.gpt-4o",
     servers=["inventory", "dice"],
-    human_input=True,
+    human_input=False,
+)
+@fast.agent(
+    name="narrator",
+    instruction=agent_prompts.NARRATOR_INSTRUCTIONS,
+    model="openai.gpt-4o",
+    servers=[],
+    human_input=False,
 )
 async def main():
     # Initialize audio lock to serialize playback
