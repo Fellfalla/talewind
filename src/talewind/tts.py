@@ -10,22 +10,10 @@ async_openai = AsyncOpenAI()
 VOICE_NARRATOR: Final = "ash"
 VOICE_PLAYER: Final = "echo"
 
-TONALITY_NARRATOR_AGRESSIVE: Final = """
-Shouting like a metal singer. Roll every single R and keep medieval literal pronounciation. 
-Alternate pitch and volume and punctuation to create a triggering and vivid narration.
-"""
-
-
-TONALITY_NARRATOR_DEFAULT = """
-Tone: Dark voice, Mysterious and mocking. High variance in pitch.
-
-Pacing: Normal. Building excitement, deliberate, pausing slightly after suspenseful moments to heighten drama.
-
-Emotion: Engaging and determined.
-
-Emphasis: Highlight dark humor, vocals, names, and actions.
-
-Pronunciation: Very literal pronunciation with very strong rolling every single R in each word.
+TONALITY_NARRATOR_DEFAULT: Final = """
+Roll every single R and keep medieval literal pronounciation. 
+Tonality is based on the content: informative, mysterious, joking, or tense.
+Pacing is fast and with few strategic pauses.
 """
 
 
