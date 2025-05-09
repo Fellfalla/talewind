@@ -5,6 +5,7 @@ from talewind.master import Agent
 from mcp_agent.core.fastagent import FastAgent
 from talewind.tts import LockedAudioPlayer
 from talewind import agent_prompts
+from collections import deque
 
 audio_player = tts.create_audio_player()
 
@@ -20,6 +21,8 @@ tts_queue: asyncio.Queue[AudioRequest] = asyncio.Queue()
 
 
 async def story_loop(agent: FastAgent):
+    NARRATOR_MEMORY_SIZE = 2
+    narrator_queue = deque(maxlen=NARRATOR_MEMORY_SIZE)
     async with agent.run() as agent_app:
         while True:
             try:
@@ -40,8 +43,11 @@ async def story_loop(agent: FastAgent):
                 print("Narrator: ", end="")
                 game_master_instructions = await agent_app.send(user_input, agent_name="master")
 
+                narrator_queue.append(
+                    f"[Player]: {user_input}\n\n[Game Master]: {game_master_instructions}"
+                )
                 narration = await agent_app.send(
-                    f"[Player]: {user_input}\n\n[Game Master]: {game_master_instructions}",
+                    narrator_queue,
                     agent_name="narrator",
                 )
 
@@ -90,6 +96,7 @@ fast = FastAgent("master", config_path="src/talewind/config/fast-agent.yaml")
     name="narrator",
     instruction=agent_prompts.NARRATOR_INSTRUCTIONS,
     model="openai.gpt-4o",
+    use_history=False,
     servers=[],
     human_input=False,
 )
