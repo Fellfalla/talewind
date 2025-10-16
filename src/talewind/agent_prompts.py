@@ -1,6 +1,6 @@
 from typing import Final
 
-NARRATION_LANGUAGE: Final = "de-DE"
+NARRATION_LANGUAGE: Final = "en-US"
 
 DEFAULT_LLM_MODEL: Final = "o4-mini"  # Or "gpt-3.5-turbo" or other compatible models
 

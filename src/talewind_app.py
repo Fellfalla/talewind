@@ -21,7 +21,7 @@ tts_queue: asyncio.Queue[AudioRequest] = asyncio.Queue()
 
 
 async def story_loop(agent: FastAgent):
-    NARRATOR_MEMORY_SIZE = 2
+    NARRATOR_MEMORY_SIZE = 5
     narrator_queue = deque(maxlen=NARRATOR_MEMORY_SIZE)
     async with agent.run() as agent_app:
         while True:
@@ -46,8 +46,16 @@ async def story_loop(agent: FastAgent):
                 narrator_queue.append(
                     f"[Player]: {user_input}\n\n[Game Master]: {game_master_instructions}"
                 )
+                if len(narrator_queue) < 2:
+                    narration_history = ""
+                else:
+                    narration_history = "\n".join(list(narrator_queue)[:-1])
+
+                next_narration_step = narrator_queue[-1]
+
                 narration = await agent_app.send(
-                    narrator_queue,
+                    f"Narration History:\n{narration_history}\n\n"
+                    f"Next Narration Step:\n{next_narration_step}\n\n",
                     agent_name="narrator",
                 )
 
@@ -88,14 +96,15 @@ fast = FastAgent("master", config_path="src/talewind/config/fast-agent.yaml")
 @fast.agent(
     name="master",
     instruction=agent_prompts.GAME_MASTER_INSTRUCTIONS,
-    model="openai.gpt-4o",
+    model="openai.gpt-4.1",
+    use_history=True,
     servers=["inventory", "dice"],
     human_input=False,
 )
 @fast.agent(
     name="narrator",
     instruction=agent_prompts.NARRATOR_INSTRUCTIONS,
-    model="openai.gpt-4o",
+    model="openai.gpt-4.1",
     use_history=False,
     servers=[],
     human_input=False,
