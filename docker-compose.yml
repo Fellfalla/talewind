@@ -7,6 +7,8 @@ services:
       LANG: en_US.UTF-8
       LANGUAGE: en_US:en
       LC_ALL: en_US.UTF-8
+      PULSE_SERVER: unix:/tmp/pulse/native
+      XDG_RUNTIME_DIR: /tmp/pulse
     build:
       context: ./docker
       dockerfile: Dockerfile.dev
@@ -19,6 +21,9 @@ services:
       - vscode-server:/home/devuser/.vscode-server
       - .:/workspace
       - ~/.ssh:/home/devuser/.ssh:ro # ssh authentication
+      # existing mounts…
+      - $XDG_RUNTIME_DIR/pulse/native:/tmp/pulse/native:ro
+      - /etc/machine-id:/etc/machine-id:ro # required by PulseAudio auth
     devices:
       - /dev/snd:/dev/snd
     # Ensure the container uses the same user IDs to avoid permission issues

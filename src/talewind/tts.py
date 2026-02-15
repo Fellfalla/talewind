@@ -10,20 +10,10 @@ async_openai = AsyncOpenAI()
 VOICE_NARRATOR: Final = "ash"
 VOICE_PLAYER: Final = "echo"
 
-VIBE_DUNGEON_MASTER_DEFAULT: Final = """
-Voice: Warm, empathetic, and professional, reassuring the customer that their issue is understood and will be resolved.
-
-Punctuation: Well-structured with natural pauses, allowing for clarity and a steady, calming flow.
-
-Delivery: Calm and patient, with a supportive and understanding tone that reassures the listener.
-
-Phrasing: Clear and concise, using customer-friendly language that avoids jargon while maintaining professionalism.
-
-Tone: Empathetic and solution-focused, emphasizing both understanding and proactive assistance.
-"""
-
-VIBE_DUNGEON_MASTER_STRONG: Final = """
-Agressive and shouting like a metal singer.
+TONALITY_NARRATOR_DEFAULT: Final = """
+Roll every single R and keep medieval literal pronounciation. 
+Tonality is based on the content: informative, mysterious, joking, or tense.
+Pacing is fast and with few strategic pauses.
 """
 
 

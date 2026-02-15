@@ -1,0 +1,3 @@
+services:
+  mcp-fetch:
+    image: mcp/fetch:latest

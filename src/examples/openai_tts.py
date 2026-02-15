@@ -1,15 +1,15 @@
 from pathlib import Path
 from typing import Final
+import asyncio
 
+from openai import AsyncOpenAI
+from openai.helpers import LocalAudioPlayer
 from openai import OpenAI
 
 SAMPLE: Final = """
 Its so nice to be here. lets go and enjoy the sun. And please lets stop fighting. i dont like that.
 """
-import asyncio
 
-from openai import AsyncOpenAI
-from openai.helpers import LocalAudioPlayer
 
 openai = AsyncOpenAI()
 
