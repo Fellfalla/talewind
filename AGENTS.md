@@ -128,3 +128,7 @@ Hard-won rules from the project's evolution. Follow them.
 22. **All async operations** in try/catch with user-facing error toasts via `saveMsg`.
 23. **Anthropic 400 errors** usually mean insufficient credits. Parse and display the full error.
 24. **Character name regex** — names with special characters or substring matches may break tag parsing.
+
+### Task Tracking
+
+25. **Check `TODOs.md` before starting work.** It tracks known bugs and planned improvements. If your change completes a listed item, tick it off (`- [x]`) as part of the same commit.
