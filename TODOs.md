@@ -1,0 +1,8 @@
+- [ ] Fix the dice rolling system and include it after asking for actions instead for switching over to the other character.
+- [x] Make TTS independent of TTS service provider
+- [x] cache generated voice files so the next replay is faster
+- [x] stream or chunk the voice generation
+- [x] the sound to text listening preview is cut off at the bottom of the screen. Make sure the preview text is within the view
+- [x] The audio replay does not contain the full text, but is cut off by half of the message. make sure that the entire narrators response is vocalized.
+- [x] stop listening and send message should be next to each other. Do not make "stop listening" unresponsive if the narrator scratches ching and ponders
+- [x] When generating the voice, the ui becomes unresponsive. instead, generation should happen in the background and ui should stay reactive at all times.

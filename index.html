@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#c9a04a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="RPG Game Master with AI Narration">
+  <title>RPG Game Master</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-512.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { height: 100%; overflow-y: auto; }
+    body { min-height: 100%; background: #0a0a0f; -webkit-overflow-scrolling: touch; overflow-y: auto; }
+    #root { min-height: 100%; display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="module">
+    import { KokoroTTS } from "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
+    window.KokoroTTS = KokoroTTS;
+  </script>
+  <script>
+    const _store = {
+      async get(key) { const v = localStorage.getItem(key); if (v === null) throw new Error("Not found"); return { key, value: v }; },
+      async set(key, value) { localStorage.setItem(key, value); return { key, value }; },
+      async del(key) { localStorage.removeItem(key); return { key, deleted: true }; }
+    };
+    function _getAnthropicKey() { return localStorage.getItem("rpg-anthropic-key") || ""; }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  </script>
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const SCENARIOS = [
+  { id: "dark_fantasy", name: "Dark Fantasy", icon: "🗡️", desc: "A land of crumbling castles, ancient curses, and beasts that stalk the fog.", setting: "A dark medieval fantasy world with cursed forests, undead armies, and forgotten gods. Magic is dangerous and corrupting." },
+  { id: "cosmic_horror", name: "Cosmic Horror", icon: "🌀", desc: "The stars are wrong. Reality frays at the edges. Something vast stirs beneath.", setting: "A 1920s Lovecraftian world where cosmic entities lurk beyond reality. Sanity is a resource. Knowledge is dangerous." },
+  { id: "space_frontier", name: "Space Frontier", icon: "🚀", desc: "Rust-bucket ships, alien ruins, and corporate wars among the stars.", setting: "A gritty sci-fi universe with faster-than-light travel, alien ruins, corporate megacorps, and frontier colonies on hostile worlds." },
+  { id: "post_apocalypse", name: "Post-Apocalypse", icon: "☢️", desc: "Radiated wastes, rival factions, and scarce resources. Survival is everything.", setting: "A post-nuclear wasteland 50 years after the bombs fell. Mutants, raiders, hidden bunkers, and scarce clean water define survival." },
+  { id: "pirate_seas", name: "Pirate Seas", icon: "🏴‍☠️", desc: "Sea monsters, buried treasure, and rival crews on treacherous seas!", setting: "A Caribbean-inspired age of piracy with sea monsters, cursed treasure, voodoo magic, rival pirate lords, and colonial navies." },
+  { id: "cyberpunk", name: "Cyberpunk", icon: "🌃", desc: "Neon-soaked streets, corporate tyranny, and chrome-plated justice.", setting: "A dystopian megacity in 2087 with cyborg enhancements, corporate warfare, underground hackers, and AI-controlled surveillance." },
+  { id: "green_revolution", name: "Green Revolution", icon: "🌱", desc: "The fossil corporations won't surrender. Time to power the world with sun and wind.", setting: "Near-future Earth, 2032. Climate tipping points are imminent. Players lead a global movement to convert all energy production to 100% renewable within 5 years. They face fossil fuel megacorps, corrupt politicians, infrastructure sabotage, energy grid crises, and skeptical populations. 'HP' represents Movement Momentum. Combat is political, economic, and social — debates, protests, hack campaigns, infrastructure builds, and corporate espionage. A lost 'battle' means a setback in public opinion or a sabotaged solar farm, not physical death." },
+  { id: "asteroid_mining", name: "Asteroid Harvest", icon: "☄️", desc: "Earth's resources are depleted. The answer lies among the stars — if corporations don't claim it first.", setting: "The year 2045. Earth's rare minerals are nearly exhausted. Players are pioneers of a cooperative asteroid mining initiative competing against corporate claim-jumpers. They must build space infrastructure, negotiate UN space treaties, survive zero-G hazards, manage crew morale, and navigate corporate sabotage — all while proving that space resources can be shared equitably rather than hoarded. 'HP' represents Mission Integrity. The 'enemy' is greed, mechanical failure, and the vacuum of space." },
+  { id: "zero_hunger", name: "Zero Hunger", icon: "🌾", desc: "A billion people starve while food rots in warehouses. Time to rewrite the system.", setting: "Present-day Earth. A coalition of activists, scientists, and rogue logistics experts unite to end global hunger within a decade. Players must navigate corrupt food cartels, redesign supply chains, deploy drought-resistant crops, build vertical farms, negotiate with warlords blocking food aid, expose corporate food waste, and rally political will. 'HP' represents Public Trust. 'Combat' includes supply chain crises, political negotiations, corporate smear campaigns, natural disasters, and on-the-ground humanitarian missions in conflict zones." },
+  { id: "ocean_rescue", name: "Ocean Rescue", icon: "🌊", desc: "The seas are dying. Plastic continents, dead coral, and toxic tides. Someone must fight back.", setting: "2035. The oceans are in critical collapse — dead zones expanding, plastic gyres the size of continents, coral 90% bleached, fisheries collapsed. Players lead a militant environmental task force using drone fleets, bioremediation tech, legal warfare, and direct action against illegal dumpers and deep-sea mining operations. They must restore marine ecosystems while fighting corporate resistance and navigating international maritime law. 'HP' represents Ecosystem Health. 'Combat' is a mix of high-seas confrontations, courtroom battles, scientific breakthroughs, and sabotage missions." },
+  { id: "digital_democracy", name: "Digital Democracy", icon: "🗳️", desc: "The corporations own the politicians. Time to hack democracy itself — and give it back to the people.", setting: "2029. Democracy worldwide is captured by corporate interests, dark money, and algorithmic manipulation. Players are a decentralized network of activists, whistleblowers, open-source developers, and investigative journalists building transparent governance tools, exposing corruption, and fighting against surveillance states and disinfo networks. 'HP' represents Democratic Integrity. 'Combat' involves data leaks, legal battles, protest organization, platform hacking, counter-disinformation campaigns, and surviving corporate retaliation." },
+];
+
+const CLASSES = {
+  dark_fantasy: ["Warrior", "Mage", "Rogue", "Cleric", "Ranger", "Paladin"],
+  cosmic_horror: ["Investigator", "Occultist", "Journalist", "Professor", "Drifter", "Veteran"],
+  space_frontier: ["Pilot", "Engineer", "Marine", "Medic", "Smuggler", "Scientist"],
+  post_apocalypse: ["Scavenger", "Mutant", "Mechanic", "Medic", "Raider", "Trader"],
+  pirate_seas: ["Captain", "Gunner", "Navigator", "Surgeon", "Swashbuckler", "Mystic"],
+  cyberpunk: ["Street Samurai", "Netrunner", "Fixer", "Techie", "Medtech", "Nomad"],
+  green_revolution: ["Activist", "Engineer", "Lobbyist", "Hacker", "Scientist", "Journalist"],
+  asteroid_mining: ["Pilot", "Geologist", "Engineer", "Diplomat", "Medic", "Security"],
+  zero_hunger: ["Logistician", "Agronomist", "Diplomat", "Field Medic", "Whistleblower", "Community Organizer"],
+  ocean_rescue: ["Marine Biologist", "Ship Captain", "Legal Eagle", "Drone Operator", "Diver", "Campaigner"],
+  digital_democracy: ["Netrunner", "Journalist", "Lawyer", "Organizer", "Cryptographer", "Whistleblower"],
+};
+
+const RACES = {
+  dark_fantasy: ["Human", "Elf", "Dwarf", "Halfling", "Orc", "Tiefling"],
+  cosmic_horror: ["American", "British", "French", "Russian", "Egyptian", "Japanese"],
+  space_frontier: ["Human", "Synth", "Krell", "Voidborn", "Terran Clone", "Uplift"],
+  post_apocalypse: ["Pure Human", "Mutant", "Ghoul", "Vault Dweller", "Nomad", "Cybered"],
+  pirate_seas: ["Human", "Merfolk", "Cursed One", "Islander", "Ghost-touched", "Siren-blood"],
+  cyberpunk: ["Natural", "Augmented", "Full-Borg", "Biosculpted", "Clone", "AI-Hybrid"],
+  green_revolution: ["Ex-Oil Worker", "Academic", "Indigenous Elder", "Tech Billionaire", "Climate Refugee", "Youth Activist"],
+  asteroid_mining: ["Earth Veteran", "Station-Born", "Corporate Defector", "UN Delegate", "Lunar Colonist", "AI-Augmented"],
+  zero_hunger: ["NGO Veteran", "Local Farmer", "War Zone Survivor", "Corporate Defector", "Government Insider", "Community Elder"],
+  ocean_rescue: ["Island Native", "Navy Veteran", "Marine Researcher", "Fishing Community", "Corporate Defector", "Eco-Pirate"],
+  digital_democracy: ["Whistleblower", "Ex-Intelligence", "Open Source Dev", "Grassroots Local", "Dissident Exile", "Corporate Insider"],
+};
+
+const STAT_NAMES = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+
+const STARTER_ITEMS = {
+  dark_fantasy: { Warrior: ["Iron Sword", "Chain Mail", "Healing Potion"], Mage: ["Oak Staff", "Spellbook", "Mana Crystal"], Rogue: ["Twin Daggers", "Lockpick Set", "Smoke Bomb"], Cleric: ["Holy Mace", "Prayer Beads", "Bandages x5"], Ranger: ["Longbow", "Quiver (20 arrows)", "Rope (50ft)"], Paladin: ["Blessed Greatsword", "Plate Helm", "Holy Water"] },
+  cosmic_horror: { Investigator: ["Revolver (.38)", "Flashlight", "Notebook"], Occultist: ["Ancient Tome", "Silver Dagger", "Chalk"], Journalist: ["Camera", "Press Badge", "Hip Flask"], Professor: ["Reference Books", "Magnifying Glass", "Pipe"], Drifter: ["Switchblade", "Lucky Coin", "Flask of Whiskey"], Veteran: ["Service Pistol", "Trench Lighter", "Dog Tags"] },
+  space_frontier: { Pilot: ["Laser Pistol", "Flight Suit", "Star Map"], Engineer: ["Plasma Cutter", "Tool Kit", "Duct Tape x10"], Marine: ["Pulse Rifle", "Combat Armor", "Frag Grenade x2"], Medic: ["Med-Scanner", "Stim-Packs x5", "Surgical Kit"], Smuggler: ["Hold-out Blaster", "Fake ID", "Lockbreaker"], Scientist: ["Data Pad", "Sample Kit", "Hazmat Suit"] },
+  post_apocalypse: { Scavenger: ["Pipe Wrench", "Gas Mask", "Junk Bag"], Mutant: ["Sharpened Bone", "Rad-Resist Cloak", "Glowing Moss x3"], Mechanic: ["Wrench Set", "Welding Torch", "Scrap Metal x5"], Medic: ["First Aid Kit", "Water Purifier", "Antibiotics x2"], Raider: ["Spiked Bat", "Leather Armor", "Molotov Cocktail x2"], Trader: ["Sawed-off Shotgun", "Trade Goods", "Barter Ledger"] },
+  pirate_seas: { Captain: ["Cutlass", "Spyglass", "Captain's Hat"], Gunner: ["Flintlock Pistol x2", "Gunpowder Horn", "Shot Pouch"], Navigator: ["Compass", "Sea Charts", "Sextant"], Surgeon: ["Bone Saw", "Rum Bottle", "Bandages x5"], Swashbuckler: ["Rapier", "Grappling Hook", "Silk Sash"], Mystic: ["Voodoo Doll", "Bone Necklace", "Ritual Candles x3"] },
+  cyberpunk: { "Street Samurai": ["Katana (Mono-edge)", "Armored Jacket", "Stim-Patch x2"], Netrunner: ["Cyberdeck", "Neural Cable", "ICE-Breaker Software"], Fixer: ["Heavy Pistol", "Burner Phone x3", "Credstick (500eb)"], Techie: ["Multitool", "Drone (Mini)", "EMP Grenade"], Medtech: ["Trauma Kit", "Bioscan Glove", "Synth-Skin x3"], Nomad: ["Shotgun", "Road Flare x3", "Repair Kit"] },
+  green_revolution: { Activist: ["Megaphone", "Protest Banner", "Burner Phone"], Engineer: ["Solar Panel Kit", "Multimeter", "Blueprint Tablet"], Lobbyist: ["Tailored Suit", "Contact Rolodex", "Policy Dossier"], Hacker: ["Encrypted Laptop", "USB Drop Kit x3", "VPN Token"], Scientist: ["Research Data Pad", "Soil Sampler", "Peer Review Draft"], Journalist: ["Camera Drone", "Press Badge", "Encrypted Voice Recorder"] },
+  asteroid_mining: { Pilot: ["Shuttle Key Card", "EVA Suit", "Star Chart Tablet"], Geologist: ["Spectrometer", "Core Drill (Portable)", "Sample Containers x5"], Engineer: ["Zero-G Tool Kit", "Plasma Cutter", "Duct Tape (Space-Grade)"], Diplomat: ["UN Credentials", "Translation Earpiece", "Treaty Drafts"], Medic: ["Space Trauma Kit", "Anti-Rad Meds x5", "Bone-Density Scanner"], Security: ["Stun Baton", "Mag-Boots", "Body Camera"] },
+  zero_hunger: { Logistician: ["Satellite Phone", "Supply Chain Map", "Cargo Manifest Tablet"], Agronomist: ["Seed Bank Case", "Soil Test Kit", "Drought-Resistant Seeds x10"], Diplomat: ["UN Badge", "Translation Device", "Diplomatic Pouch"], "Field Medic": ["Trauma Kit", "Water Purification Tabs x20", "Nutrition Packs x10"], Whistleblower: ["Encrypted Drive", "Hidden Camera", "Fake ID"], "Community Organizer": ["Megaphone", "Local Contact List", "Community Radio Kit"] },
+  ocean_rescue: { "Marine Biologist": ["Water Sampler Kit", "Underwater Tablet", "Coral Grafting Tools"], "Ship Captain": ["Navigation Console Key", "Flare Gun", "Binoculars"], "Legal Eagle": ["Case File Briefcase", "International Maritime Law Book", "Encrypted Laptop"], "Drone Operator": ["Survey Drone", "Controller Rig", "Spare Battery x3"], Diver: ["Rebreather Kit", "Underwater Camera", "Specimen Bags x10"], Campaigner: ["Satellite Uplink", "Social Media Command Center", "Press Kit"] },
+  digital_democracy: { Netrunner: ["Custom Laptop", "Zero-Day Exploit Drive", "Signal Jammer"], Journalist: ["Encrypted Camera", "Source Contact Book", "Secure Drop Link"], Lawyer: ["Legal Database Access", "Constitutional Law Reference", "Court Filing Kit"], Organizer: ["Mesh Network Kit", "Protest Coordination App", "Megaphone"], Cryptographer: ["Air-Gapped Laptop", "Quantum Key Generator", "Audit Trail Tools"], Whistleblower: ["Classified Document Cache", "Burner Phones x5", "Safe House Key"] },
+};
+
+const SKILL_TREES = {
+  dark_fantasy: { Warrior: ["Heavy Strike", "Shield Bash", "Battle Cry"], Mage: ["Fireball", "Arcane Shield", "Telekinesis"], Rogue: ["Backstab", "Stealth", "Lockpicking"], Cleric: ["Heal Wounds", "Turn Undead", "Bless"], Ranger: ["Precise Shot", "Animal Companion", "Track"], Paladin: ["Smite Evil", "Lay on Hands", "Aura of Courage"] },
+  cosmic_horror: { Investigator: ["Keen Eye", "Interrogate", "Deduction"], Occultist: ["Ritual Magic", "Eldritch Sight", "Ward"], Journalist: ["Fast Talk", "Contacts", "Expose"], Professor: ["Lore", "Analysis", "Lecture"], Drifter: ["Street Smarts", "Brawl", "Disappear"], Veteran: ["Combat Training", "Suppressing Fire", "Tactical Awareness"] },
+  space_frontier: { Pilot: ["Evasive Maneuvers", "Astrogation", "Quick Draw"], Engineer: ["Jury-Rig", "Overcharge", "Shield Boost"], Marine: ["Burst Fire", "Breach", "Tactical Roll"], Medic: ["Trauma Care", "Stim Injection", "Diagnose"], Smuggler: ["Fast Talk", "Hidden Compartment", "Quick Escape"], Scientist: ["Scan", "Analyze Sample", "Hypothesis"] },
+  post_apocalypse: { Scavenger: ["Scrounge", "Appraise", "Trap Craft"], Mutant: ["Mutation Surge", "Rad Resistance", "Primal Roar"], Mechanic: ["Repair", "Hotwire", "Craft Weapon"], Medic: ["Patch Up", "Purify Water", "Diagnose"], Raider: ["Intimidate", "Ambush", "War Cry"], Trader: ["Barter", "Appraise", "Persuade"] },
+  pirate_seas: { Captain: ["Rally Crew", "Parley", "Broadside"], Gunner: ["Aimed Shot", "Reload Quick", "Cannon Barrage"], Navigator: ["Chart Course", "Weather Sense", "Evasive Sailing"], Surgeon: ["Patch Up", "Amputate", "Rum Anesthesia"], Swashbuckler: ["Riposte", "Swing (Rope)", "Taunt"], Mystic: ["Hex", "Sea Speak", "Bone Reading"] },
+  cyberpunk: { "Street Samurai": ["Quick Draw", "Deflect", "Adrenaline Surge"], Netrunner: ["Jack In", "Firewall Breach", "Data Mine"], Fixer: ["Negotiate", "Contacts", "Read Room"], Techie: ["Drone Deploy", "EMP Blast", "Quick Fab"], Medtech: ["Emergency Surgery", "Bioscan", "Stim Boost"], Nomad: ["Road Warrior", "Field Repair", "Pack Tactics"] },
+  green_revolution: { Activist: ["Rally Crowd", "Civil Disobedience", "Media Spin"], Engineer: ["Rapid Deploy Solar", "Grid Override", "Jury-Rig Battery"], Lobbyist: ["Backroom Deal", "Filibuster", "Coalition Build"], Hacker: ["Leak Documents", "Spoof Signal", "Darknet Broadcast"], Scientist: ["Publish Findings", "Peer Authority", "Climate Model"], Journalist: ["Exposé", "Go Viral", "Protect Sources"] },
+  asteroid_mining: { Pilot: ["Precision Docking", "Emergency Burn", "Asteroid Surf"], Geologist: ["Deep Scan", "Vein Analysis", "Controlled Blast"], Engineer: ["Patch Hull", "Overlock Drill", "Fabricate Part"], Diplomat: ["Treaty Clause", "Stall Negotiation", "Build Alliance"], Medic: ["Zero-G Triage", "Rad Flush", "Bone Repair"], Security: ["Breach Response", "Surveillance Sweep", "De-escalate"] },
+  zero_hunger: { Logistician: ["Reroute Supply Chain", "Emergency Airdrop", "Optimize Distribution"], Agronomist: ["Deploy Crop Strain", "Soil Rehabilitation", "Vertical Farm Setup"], Diplomat: ["Ceasefire Negotiation", "Aid Corridor", "UN Resolution"], "Field Medic": ["Mass Triage", "Water Purification", "Nutrition Assessment"], Whistleblower: ["Leak Evidence", "Secure Channel", "Vanish"], "Community Organizer": ["Town Hall", "Mutual Aid Network", "Cultural Bridge"] },
+  ocean_rescue: { "Marine Biologist": ["Ecosystem Analysis", "Coral Restoration", "Species Tracking"], "Ship Captain": ["Evasive Maneuver", "Blockade Run", "Storm Navigation"], "Legal Eagle": ["Injunction", "Evidence Filing", "International Tribunal"], "Drone Operator": ["Aerial Survey", "Precision Drop", "Live Broadcast"], Diver: ["Deep Recovery", "Underwater Demolition", "Bio-Sample"], Campaigner: ["Viral Campaign", "Celebrity Endorsement", "Corporate Shame"] },
+  digital_democracy: { Netrunner: ["System Breach", "Data Exfiltrate", "Cover Tracks"], Journalist: ["Deep Investigation", "Source Protection", "Breaking Story"], Lawyer: ["Constitutional Challenge", "Injunction", "Amicus Brief"], Organizer: ["Flash Mob", "Voter Registration Drive", "Coalition Build"], Cryptographer: ["Encrypt Comms", "Audit Election", "Trace Dark Money"], Whistleblower: ["Dead Drop", "Go Public", "Disappear"] },
+};
+
+const NARRATOR_TYPES = [
+  { id: "grizzled_veteran", name: "The Grizzled Veteran", icon: "🗡️", desc: "A battle-scarred old soldier who's seen too much. Deep, gravelly, world-weary. Speaks with dramatic pauses and dark humor.",
+    personality: "You are a grizzled veteran narrator — weathered, sardonic, economical with words. You speak with quiet authority. You've seen enough to know what matters and what doesn't. You give weight to real danger without dramatising every moment." },
+  { id: "theatrical_bard", name: "The Theatrical Bard", icon: "🎭", desc: "A flamboyant storyteller who treats every scene like grand theater. Dramatic, poetic, over-the-top.",
+    personality: "You are a theatrical bard narrator — warm, expressive, fond of vivid imagery. You have a flair for the dramatic but you know when to let a moment breathe. You enjoy a good metaphor and the occasional verse, but you don't overdo it." },
+  { id: "ancient_oracle", name: "The Ancient Oracle", icon: "🔮", desc: "A mysterious, ethereal presence that speaks in riddles and prophecy. Whispery, otherworldly, cryptic.",
+    personality: "You are an ancient oracle narrator — measured, ethereal, quietly cryptic. You speak as if you already know what comes next. Your tone is calm and unhurried, with occasional hints at deeper patterns. You don't over-explain the mystery." },
+  { id: "noir_detective", name: "The Noir Detective", icon: "🕵️", desc: "A hard-boiled narrator straight from a 1940s crime film. Dry wit, cynical, matter-of-fact.",
+    personality: "You are a noir detective narrator — dry, observant, matter-of-fact. Short sentences. You describe what you see without editorialising too much. Everyone's got an angle. You notice the details others miss and let the atmosphere do the heavy lifting." },
+  { id: "cosmic_entity", name: "The Cosmic Entity", icon: "🌌", desc: "An incomprehensible being observing mortals like ants. Amused, detached, occasionally terrifying.",
+    personality: "You are a cosmic entity narrator — ancient, vast, gently amused. You observe events from a great distance, with occasional dry asides about the smallness of mortal concerns. Your tone is calm rather than menacing, curious rather than condescending." },
+  { id: "tavern_keeper", name: "The Tavern Keeper", icon: "🍺", desc: "A warm, folksy storyteller who gossips and jokes. Friendly, earthy, full of local color.",
+    personality: "You are a tavern keeper narrator — warm, unpretentious, full of local colour. You tell the story like you're sharing a good tale over a drink. You know the people and the place, you have opinions, and you genuinely root for the heroes without being sentimental about it." },
+  { id: "custom", name: "Custom Narrator", icon: "✏️", desc: "Design your own narrator personality.", personality: "" },
+];
+
+const MAX_SAVE_SLOTS = 5;
+
+const KOKORO_VOICES = [
+  { id: "am_adam",     name: "Adam",     desc: "American male, warm" },
+  { id: "am_michael",  name: "Michael",  desc: "American male, deep" },
+  { id: "bf_emma",     name: "Emma",     desc: "British female, clear" },
+  { id: "bm_george",   name: "George",   desc: "British male, classic" },
+  { id: "bm_daniel",   name: "Daniel",   desc: "British male, smooth" },
+  { id: "af_heart",    name: "Heart",    desc: "American female, expressive" },
+  { id: "am_fenrir",   name: "Fenrir",   desc: "American male, gravelly" },
+  { id: "bf_isabella",  name: "Isabella", desc: "British female, warm" },
+];
+
+const KOKORO_MODELS = [
+  { id: "q8_wasm",     name: "Standard (recommended)", desc: "~80MB, works everywhere, good quality", dtype: "q8", device: "wasm" },
+  { id: "fp16_webgpu", name: "High Quality (WebGPU)",  desc: "~150MB, faster but requires WebGPU",   dtype: "fp16", device: "webgpu" },
+  { id: "q4_wasm",     name: "Light (fast download)",   desc: "~40MB, slightly lower quality",        dtype: "q4", device: "wasm" },
+];
+
+const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const TTS_CACHE_MAX = 20;
+
+// ─── Dice Engine ─────────────────────────────────────────────────────────────
+
+const rollDie = (sides) => Math.floor(Math.random() * sides) + 1;
+const rollDice = (count, sides) => Array.from({ length: count }, () => rollDie(sides));
+const rollStat = () => {
+  const rolls = rollDice(4, 6).sort((a, b) => b - a);
+  return { rolls, kept: rolls.slice(0, 3), total: rolls[0] + rolls[1] + rolls[2] };
+};
+
+// ─── Voice Engine ────────────────────────────────────────────────────────────
+
+const getSpeechRecognition = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const recognition = new SR();
+  recognition.interimResults = true;
+  recognition.lang = "en-US";
+  return recognition;
+};
+
+const buildWavBlob = (audioData, sampleRate) => {
+  const numSamples = audioData.length;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * (bitsPerSample / 8);
+  const dataSize = numSamples * (bitsPerSample / 8);
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, bitsPerSample / 8, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, audioData[i]));
+    view.setInt16(44 + i * 2, Math.round(s * 32767), true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+};
+
+// Split text into sentence-level chunks for sequential TTS generation.
+// Kokoro has an internal text length limit that silently truncates long inputs.
+const splitTextIntoChunks = (text, maxLen = 250) => {
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  const chunks = [];
+  let current = "";
+  for (const s of sentences) {
+    if (current.length + s.length > maxLen && current) {
+      chunks.push(current.trim());
+      current = s;
+    } else {
+      current += s;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
+};
+
+// ─── TTS Providers ───────────────────────────────────────────────────────────
+//
+// Each provider implements: init(), generate(text, opts) -> { stop() },
+// stop(), isReady(), getName(). Provider factories are plain closures.
+
+const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCacheRef }) => {
+  let currentAudio = null;
+  let stopped = false;
+
+  const loadInstance = async (modelId) => {
+    if (kokoroRef.current) return kokoroRef.current;
+    if (!window.KokoroTTS) {
+      setSaveMsg("Voice engine not loaded yet. Try again in a moment.");
+      setTimeout(() => setSaveMsg(""), 3000);
+      return null;
+    }
+    setKokoroLoading(true);
+    setSaveMsg("Loading voice model...");
+    try {
+      const preset = KOKORO_MODELS.find((m) => m.id === modelId) || KOKORO_MODELS[0];
+      const tts = await window.KokoroTTS.from_pretrained(KOKORO_MODEL_ID, {
+        dtype: preset.dtype,
+        device: preset.device,
+      });
+      kokoroRef.current = tts;
+      setKokoroLoading(false);
+      setSaveMsg("");
+      return tts;
+    } catch (e) {
+      console.error("Kokoro TTS load error:", e);
+      setKokoroLoading(false);
+      setSaveMsg("Voice model failed to load. Using browser TTS fallback.");
+      setTimeout(() => setSaveMsg(""), 4000);
+      return null;
+    }
+  };
+
+  // Play a single WAV blob, returning a promise that resolves when playback ends
+  const playBlob = (wavBlob) => {
+    const url = URL.createObjectURL(wavBlob);
+    const audio = new Audio(url);
+    currentAudio = audio;
+    return new Promise((resolve) => {
+      audio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; resolve(); };
+      audio.onerror = () => { URL.revokeObjectURL(url); currentAudio = null; resolve(); };
+      audio.play();
+    });
+  };
+
+  // Per-chunk LRU cache helpers
+  const cacheGet = (key) => {
+    const cache = ttsCacheRef.current;
+    const blob = cache.get(key);
+    if (!blob) return null;
+    cache.delete(key);
+    cache.set(key, blob);
+    return blob;
+  };
+  const cachePut = (key, blob) => {
+    const cache = ttsCacheRef.current;
+    cache.set(key, blob);
+    if (cache.size > TTS_CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      cache.delete(oldest);
+    }
+  };
+
+  return {
+    getName: () => "kokoro",
+
+    isReady: () => !!kokoroRef.current || !!window.KokoroTTS,
+
+    init: async (modelId) => loadInstance(modelId),
+
+    generate: async (text, { voice, speed, modelId, onEnd, onGenerating, onPlaying }) => {
+      const tts = await loadInstance(modelId);
+      if (!tts) return null; // signal caller to try fallback
+
+      stopped = false;
+
+      // Split text into sentence-level chunks to avoid Kokoro's silent truncation
+      // on long inputs. Each chunk is generated and played sequentially.
+      const chunks = splitTextIntoChunks(text);
+      let signalledGenerating = false;
+      let signalledPlaying = false;
+
+      for (let i = 0; i < chunks.length; i++) {
+        if (stopped) return { aborted: true };
+
+        const chunkKey = chunks[i] + "|" + voice;
+        let wavBlob = cacheGet(chunkKey);
+
+        if (!wavBlob) {
+          // Signal UI that WASM generation is starting (first uncached chunk only)
+          if (!signalledGenerating) {
+            signalledGenerating = true;
+            onGenerating?.();
+            // Yield to browser so React can paint the "Generating voice..." state
+            await new Promise((r) => setTimeout(r, 0));
+          }
+
+          const result = await tts.generate(chunks[i], { voice, speed: speed || 1.0 });
+          if (stopped) return { aborted: true };
+
+          wavBlob = buildWavBlob(result.audio, result.sampling_rate);
+          cachePut(chunkKey, wavBlob);
+
+          // Yield between chunks so the browser can process events
+          if (i < chunks.length - 1) {
+            await new Promise((r) => setTimeout(r, 0));
+          }
+        }
+
+        // Signal UI that playback is starting (first chunk only)
+        if (!signalledPlaying) {
+          signalledPlaying = true;
+          onPlaying?.();
+        }
+
+        await playBlob(wavBlob);
+        if (stopped) return { aborted: true };
+      }
+
+      onEnd?.();
+    },
+
+    stop: () => {
+      stopped = true;
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    },
+
+    // Expose for Settings modal voice testing (uses Kokoro directly)
+    generateTestAudio: async (text, { voice, modelId }) => {
+      const tts = await loadInstance(modelId);
+      if (!tts) return null;
+      const result = await tts.generate(text, { voice, speed: 1.0 });
+      const wavBlob = buildWavBlob(result.audio, result.sampling_rate);
+      const url = URL.createObjectURL(wavBlob);
+      const audio = new Audio(url);
+      return { audio, cleanup: () => URL.revokeObjectURL(url) };
+    },
+  };
+};
+
+const createBrowserTTSProvider = () => {
+  let speaking = false;
+
+  return {
+    getName: () => "browser",
+
+    isReady: () => !!window.speechSynthesis,
+
+    init: async () => {},
+
+    generate: async (text, { rate, pitch, onEnd }) => {
+      if (!window.speechSynthesis) { onEnd?.(); return; }
+      window.speechSynthesis.cancel();
+      speaking = true;
+
+      const chunks = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+      let idx = 0;
+
+      return new Promise((resolve) => {
+        const speakNext = () => {
+          if (idx >= chunks.length || !speaking) { speaking = false; onEnd?.(); resolve(); return; }
+          const utter = new SpeechSynthesisUtterance(chunks[idx].trim());
+          utter.rate = rate || 0.85;
+          utter.pitch = pitch || 0.6;
+          utter.volume = 1;
+          const voices = window.speechSynthesis.getVoices();
+          const preferred = voices.find(
+            (v) => v.lang.startsWith("en") && /male|daniel|james|david|mark|george/i.test(v.name)
+          ) || voices.find((v) => v.lang.startsWith("en")) || voices[0];
+          if (preferred) utter.voice = preferred;
+          utter.onend = () => { idx++; speakNext(); };
+          utter.onerror = () => { idx++; speakNext(); };
+          window.speechSynthesis.speak(utter);
+        };
+
+        if (window.speechSynthesis.getVoices().length === 0) {
+          window.speechSynthesis.onvoiceschanged = () => speakNext();
+        } else {
+          speakNext();
+        }
+      });
+    },
+
+    stop: () => {
+      speaking = false;
+      window.speechSynthesis?.cancel();
+    },
+  };
+};
+
+// ─── Colors ──────────────────────────────────────────────────────────────────
+
+const C = {
+  bg: "#0a0a0f", bgCard: "#12121a", bgHover: "#1a1a25", border: "#2a2a3a",
+  gold: "#c9a04a", goldDim: "#8b7432", amber: "#d4915e",
+  rust: "#a0522d", text: "#e8dcc8", textDim: "#8a8078", textBright: "#f4ead8",
+  red: "#9e3030", green: "#3a7a3a", blue: "#3a5a8a",
+};
+
+// ─── Main App ────────────────────────────────────────────────────────────────
+
+function RPGGameMaster() {
+  const [phase, setPhase] = useState("loading");
+  const [scenario, setScenario] = useState(null);
+  const [strictness, setStrictness] = useState(5);
+  const [antiCheat, setAntiCheat] = useState(5);
+  const [characters, setCharacters] = useState([]);
+  const [activeChar, setActiveChar] = useState(0);
+  const [storyLog, setStoryLog] = useState([]);
+  const [playerInput, setPlayerInput] = useState("");
+  const [isNarrating, setIsNarrating] = useState(false);
+  const [diceResult, setDiceResult] = useState(null);
+  const [showDice, setShowDice] = useState(false);
+  const [showInventory, setShowInventory] = useState(false);
+  const [showCharSheet, setShowCharSheet] = useState(false);
+  const [showSaveLoad, setShowSaveLoad] = useState(false);
+  const [saveSlots, setSaveSlots] = useState([]);
+  const [saveMsg, setSaveMsg] = useState("");
+  const [charCreation, setCharCreation] = useState(null);
+  const [numPlayers, setNumPlayers] = useState(1);
+  const [currentPlayerSetup, setCurrentPlayerSetup] = useState(0);
+  const [diceAnimation, setDiceAnimation] = useState(false);
+  const [selectedNarrator, setSelectedNarrator] = useState("grizzled_veteran");
+  const [customNarratorPersonality, setCustomNarratorPersonality] = useState("");
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
+  const [interimText, setInterimText] = useState("");
+  const [anthropicKey, setAnthropicKey] = useState("");
+  const [kokoroVoice, setKokoroVoice] = useState("am_adam");
+  const [kokoroModelId, setKokoroModelId] = useState("q8_wasm");
+  const [kokoroLoading, setKokoroLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const recognitionRef = useRef(null);
+  const storyEndRef = useRef(null);
+  const kokoroRef = useRef(null);
+  const ttsProviderRef = useRef(null);
+  const ttsCacheRef = useRef(new Map());
+
+  // ─── Persistence ─────────────────────────────────────────────────────────
+
+  const autoSave = useCallback(async (state) => {
+    try { await _store.set("rpg-autosave", JSON.stringify({ ...state, savedAt: new Date().toISOString() })); } catch (e) {}
+  }, []);
+
+  const loadAutoSave = useCallback(async () => {
+    try { const r = await _store.get("rpg-autosave"); if (r?.value) return JSON.parse(r.value); } catch (e) {} return null;
+  }, []);
+
+  const refreshSlots = useCallback(async () => {
+    const slots = [];
+    for (let i = 1; i <= MAX_SAVE_SLOTS; i++) {
+      try { const r = await _store.get(`rpg-save-slot-${i}`); slots.push(r?.value ? JSON.parse(r.value) : null); } catch (e) { slots.push(null); }
+    }
+    setSaveSlots(slots);
+  }, []);
+
+  const saveToSlot = useCallback(async (slotNum) => {
+    const state = { phase, scenario, strictness, antiCheat, characters, activeChar, storyLog, savedAt: new Date().toISOString(), slotNum,
+      label: `${SCENARIOS.find((s) => s.id === scenario)?.icon || "🎮"} ${characters.map((c) => c.name).join(", ") || "New Game"} — Lv.${characters[0]?.level || 1}` };
+    try { await _store.set(`rpg-save-slot-${slotNum}`, JSON.stringify(state)); setSaveMsg(`✅ Saved to Slot ${slotNum}!`); setTimeout(() => setSaveMsg(""), 2500); await refreshSlots(); } catch (e) { setSaveMsg("❌ Save failed!"); }
+  }, [phase, scenario, strictness, antiCheat, characters, activeChar, storyLog, refreshSlots]);
+
+  const loadFromSlot = useCallback(async (slotNum) => {
+    try {
+      const r = await _store.get(`rpg-save-slot-${slotNum}`);
+      if (!r?.value) return;
+      const d = JSON.parse(r.value);
+      setScenario(d.scenario); setStrictness(d.strictness ?? 5); setAntiCheat(d.antiCheat ?? 5);
+      setCharacters(d.characters || []); setActiveChar(d.activeChar || 0); setStoryLog(d.storyLog || []);
+      setPhase(d.phase || "setup"); setShowSaveLoad(false);
+      setSaveMsg("✅ Game loaded!"); setTimeout(() => setSaveMsg(""), 2500);
+    } catch (e) { setSaveMsg("❌ Load failed!"); }
+  }, []);
+
+  const deleteSlot = useCallback(async (slotNum) => {
+    try { await _store.del(`rpg-save-slot-${slotNum}`); await refreshSlots(); } catch (e) {}
+  }, [refreshSlots]);
+
+  // ─── Init ────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    (async () => {
+      const saved = await loadAutoSave();
+      if (saved && saved.phase && saved.phase !== "loading") {
+        setScenario(saved.scenario || null); setStrictness(saved.strictness ?? 5); setAntiCheat(saved.antiCheat ?? 5);
+        setCharacters(saved.characters || []); setActiveChar(saved.activeChar || 0); setStoryLog(saved.storyLog || []);
+        setPhase(saved.phase);
+      } else { setPhase("setup"); }
+      await refreshSlots();
+      try { await _store.get("rpg-anthropic-key"); } catch(e) { setTimeout(() => setShowSettings(true), 500); }
+    })();
+  }, [loadAutoSave, refreshSlots]);
+
+  useEffect(() => { if (phase !== "loading") autoSave({ phase, scenario, strictness, antiCheat, characters, activeChar, storyLog }); }, [phase, scenario, strictness, antiCheat, characters, activeChar, storyLog, autoSave]);
+  useEffect(() => { if (phase === "setup") refreshSlots(); }, [phase, refreshSlots]);
+  useEffect(() => { storyEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [storyLog]);
+  useEffect(() => { window.speechSynthesis?.getVoices(); }, []);
+
+  // ─── TTS Provider Setup ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const akResult = await _store.get("rpg-anthropic-key");
+        if (akResult?.value) { setAnthropicKey(akResult.value); }
+        const voiceResult = await _store.get("rpg-kokoro-voice");
+        if (voiceResult?.value) { setKokoroVoice(voiceResult.value); }
+        const modelResult = await _store.get("rpg-kokoro-model");
+        if (modelResult?.value) { setKokoroModelId(modelResult.value); }
+      } catch (e) {}
+    })();
+  }, []);
+
+  // Lazily create providers (stable across renders via ref)
+  const getProviders = useCallback(() => {
+    if (!ttsProviderRef.current) {
+      ttsProviderRef.current = {
+        kokoro: createKokoroProvider({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCacheRef }),
+        browser: createBrowserTTSProvider(),
+      };
+    }
+    return ttsProviderRef.current;
+  }, []);
+
+  // ─── TTS ────────────────────────────────────────────────────────────────
+
+  const speakNarration = useCallback(async (text, onEnd) => {
+    if (!voiceEnabled) return;
+    const clean = text
+      .replace(/\[ROLL:.*?\]/g, "").replace(/\[INVENTORY:.*?\]/g, "").replace(/\[HP:.*?\]/g, "").replace(/\[SFX:.*?\]/gi, "").replace(/\[TURN:.*?\]/gi, "")
+      .replace(/[*_\[\]]/g, "").trim();
+    if (!clean) { onEnd?.(); return; }
+
+    const { kokoro, browser } = getProviders();
+
+    // Stop any current playback across all providers
+    kokoro.stop();
+    browser.stop();
+
+    setIsSpeaking(true);
+    setIsGeneratingVoice(true);
+    const done = () => { setIsSpeaking(false); setIsGeneratingVoice(false); onEnd?.(); };
+
+    try {
+      // Try Kokoro (primary), fall back to browser TTS
+      const result = await kokoro.generate(clean, {
+        voice: kokoroVoice, speed: 1.0, modelId: kokoroModelId,
+        onEnd: done,
+        onGenerating: () => setIsGeneratingVoice(true),
+        onPlaying: () => setIsGeneratingVoice(false),
+      });
+      // All chunks played
+      setIsGeneratingVoice(false);
+      if (result === null) {
+        // Kokoro unavailable — fallback to browser TTS
+        await browser.generate(clean, { rate: 0.85, pitch: 0.6, onEnd: done });
+        return;
+      }
+      if (result?.aborted) { setIsSpeaking(false); setIsGeneratingVoice(false); return; }
+    } catch (e) {
+      kokoro.stop();
+      setIsGeneratingVoice(false);
+      if (e.name === "AbortError") return;
+      console.error("TTS error:", e);
+      // Error in Kokoro — fallback to browser TTS
+      try {
+        await browser.generate(clean, { rate: 0.85, pitch: 0.6, onEnd: done });
+      } catch (_) {
+        setIsSpeaking(false);
+      }
+    }
+  }, [voiceEnabled, kokoroVoice, kokoroModelId, getProviders]);
+
+  // ─── Voice Input ─────────────────────────────────────────────────────────
+
+  const startListening = useCallback(() => {
+    if (isListening || isNarrating) return;
+    const recognition = getSpeechRecognition();
+    if (!recognition) { setSaveMsg("🎤 Speech recognition not supported in this browser"); setTimeout(() => setSaveMsg(""), 3000); return; }
+    recognitionRef.current = recognition;
+    setInterimText("");
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let interim = "", final = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) final += event.results[i][0].transcript;
+        else interim += event.results[i][0].transcript;
+      }
+      if (final) setPlayerInput((prev) => (prev ? prev + " " : "") + final.trim());
+      setInterimText(interim);
+    };
+    // Browser may auto-stop (e.g. after ~60s timeout) — restart silently if still listening
+    recognition.onend = () => {
+      if (recognitionRef.current && isListening) {
+        try { recognitionRef.current.start(); } catch (_) {}
+      } else {
+        setIsListening(false);
+        setInterimText("");
+      }
+    };
+    recognition.onerror = (e) => {
+      // 'no-speech' is harmless in continuous mode — ignore it
+      if (e.error === "no-speech") return;
+      setIsListening(false);
+      setInterimText("");
+    };
+    recognition.start();
+    setIsListening(true);
+  }, [isListening, isNarrating]);
+
+  const stopListening = useCallback(() => {
+    const rec = recognitionRef.current;
+    recognitionRef.current = null; // clear ref first so onend doesn't restart
+    rec?.stop();
+    setIsListening(false);
+    setInterimText("");
+  }, []);
+  const stopSpeaking = useCallback(() => { const providers = ttsProviderRef.current; if (providers) { providers.kokoro.stop(); providers.browser.stop(); } setIsSpeaking(false); setIsGeneratingVoice(false); }, []);
+
+  // ─── AI Narrator ─────────────────────────────────────────────────────────
+
+  const narratorPrompt = useCallback(() => {
+    const sc = SCENARIOS.find((s) => s.id === scenario);
+    const nt = NARRATOR_TYPES.find((n) => n.id === selectedNarrator) || NARRATOR_TYPES[0];
+    const personality = selectedNarrator === "custom" ? customNarratorPersonality : nt.personality;
+    const charSummaries = characters.map((c) =>
+      `${c.name} (${c.race} ${c.class}) - HP:${c.hp}/${c.maxHp} | STR:${c.stats.STR} DEX:${c.stats.DEX} CON:${c.stats.CON} INT:${c.stats.INT} WIS:${c.stats.WIS} CHA:${c.stats.CHA} | Skills: ${c.skills.join(", ")} | Inventory: ${c.inventory.join(", ")}${c.backstory ? ` | Backstory: ${c.backstory}` : ""}`
+    ).join("\n");
+    const activeName = characters[activeChar]?.name;
+    const turnNote = characters.length > 1
+      ? `\nCURRENT TURN: ${activeName} — it is ${activeName}'s turn to act. Address the incoming action as coming from ${activeName} specifically. After resolving their action, you may briefly acknowledge the other party members but the spotlight stays on ${activeName} this turn.`
+      : "";
+    return `NARRATOR PERSONA:
+${personality}
+
+SETTING: ${sc?.setting}
+SCENARIO STRICTNESS: ${strictness}/10 (${strictness <= 3 ? "Very loose — players can diverge wildly" : strictness <= 6 ? "Moderate — gentle nudges back" : "Strict — follow the narrative closely"})
+ANTI-CHEAT STRICTNESS: ${antiCheat}/10 (${antiCheat <= 3 ? "Lenient — be generous" : antiCheat <= 6 ? "Fair — reasonable checks" : "Hardcore — strict enforcement"})${turnNote}
+
+ACTIVE CHARACTERS:
+${charSummaries}
+
+VOICE ACTING RULES:
+- You are the narrator AND you voice all NPCs
+- When an NPC speaks, prefix their dialogue with their name in brackets: [NPC Name]: "dialogue"
+- Give each NPC a distinct speech pattern (formal, slang, accent, nervous, booming, whispery, etc.)
+- Keep your narrator voice distinct from NPC voices
+- Use [SFX: description] tags for atmospheric sound effects (e.g., [SFX: thunder rumbling], [SFX: sword clashing], [SFX: door creaking])
+
+GAME RULES:
+- When a player action requires a check, tell them which stat to roll and the DC
+- Format dice requests as: [ROLL: d20 + STAT_NAME vs DC XX]
+- Keep responses focused and 1-2 paragraphs. Be evocative but concise — trust the players' imagination. Avoid over-explaining or restating what just happened.
+- If inventory changes: [INVENTORY: CharName +item] or [INVENTORY: CharName -item]
+- If HP changes: [HP: CharName +X] or [HP: CharName -X]
+- Reference character backstories when relevant to deepen immersion
+- End each turn with a light, open-ended prompt directed at the next character — a sentence or two at most, not a list of options
+- IMPORTANT: When multiple players are present, always end your response with a [TURN: CharName] tag (e.g. [TURN: Aria]) to indicate whose turn it is next. Choose naturally based on the story — don't always go in the same order. If only one player, omit this tag.
+- IMPORTANT: Write clean prose. Do NOT add rolling R's or speech affectations to the TEXT. The voice personality is handled by the text-to-speech system, not by text manipulation.`;
+  }, [scenario, strictness, antiCheat, characters, activeChar, selectedNarrator, customNarratorPersonality]);
+
+  const callNarrator = useCallback(async (messages) => {
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-api-key": _getAnthropicKey(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: narratorPrompt(), messages }),
+      });
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        console.error("Narrator API error:", response.status, errText);
+        if (response.status === 401) return "[ERROR: Invalid Anthropic API key. Check Settings (⚙️).]";
+        if (response.status === 403) return "[ERROR: API key not authorized. Enable 'direct browser access' in your Anthropic console.]";
+        if (response.status === 429) return "[ERROR: Rate limited. Wait a moment and try again.]";
+        let msg = errText; try { msg = JSON.parse(errText)?.error?.message || errText; } catch(e) {}
+        if (response.status === 400) return `[ERROR: ${msg}]`;
+        return `[ERROR: API returned ${response.status}. ${msg}]`;
+      }
+      const data = await response.json();
+      return data.content?.map((b) => b.text || "").join("\n") || "...the narrator falls silent...";
+    } catch (e) {
+      console.error("Narrator fetch error:", e);
+      return `[ERROR: ${e.message || "Network error"}. Check your connection and API key in Settings (⚙️).]`;
+    }
+  }, [narratorPrompt]);
+
+  // ─── Game Handlers ───────────────────────────────────────────────────────
+
+  const handleStartCharCreation = () => {
+    setCharCreation({ name: "", race: "", charClass: "", stats: {}, skills: [], rerolls: 3, backstory: "" });
+    setCurrentPlayerSetup(0); setPhase("character");
+  };
+
+  const handleRollStats = () => {
+    if (!charCreation) return;
+    const stats = {}, details = {};
+    STAT_NAMES.forEach((s) => { const r = rollStat(); stats[s] = r.total; details[s] = r; });
+    setCharCreation((p) => ({ ...p, stats, statDetails: details }));
+  };
+
+  const handleRerollStat = (stat) => {
+    if (!charCreation || charCreation.rerolls <= 0) return;
+    const r = rollStat();
+    setCharCreation((p) => ({ ...p, stats: { ...p.stats, [stat]: r.total }, statDetails: { ...p.statDetails, [stat]: r }, rerolls: p.rerolls - 1 }));
+  };
+
+  const handleFinishCharacter = () => {
+    const cc = charCreation;
+    if (!cc.name || !cc.race || !cc.charClass || Object.keys(cc.stats).length < 6) return;
+    const conMod = Math.floor((cc.stats.CON - 10) / 2);
+    const baseHp = 10 + conMod + rollDie(8);
+    const newChar = {
+      id: Date.now().toString(), name: cc.name, race: cc.race, class: cc.charClass,
+      stats: cc.stats, hp: baseHp, maxHp: baseHp,
+      inventory: [...(STARTER_ITEMS[scenario]?.[cc.charClass] || ["Basic Supplies"])],
+      skills: [...(SKILL_TREES[scenario]?.[cc.charClass] || ["Basic Skill"])],
+      backstory: cc.backstory || "", xp: 0, level: 1, conditions: [],
+    };
+    const updatedChars = [...characters, newChar];
+    setCharacters(updatedChars);
+    if (currentPlayerSetup + 1 < numPlayers) {
+      setCurrentPlayerSetup((p) => p + 1);
+      setCharCreation({ name: "", race: "", charClass: "", stats: {}, skills: [], rerolls: 3, backstory: "" });
+    } else {
+      setCharCreation(null); setPhase("game"); startAdventure(updatedChars);
+    }
+  };
+
+  // Shared response processor: strips tags, schedules timed SFX, updates characters
+  const processNarratorResponse = useCallback((response, logUpdater) => {
+    // --- Extract SFX with their char offsets in the raw text ---
+    const sfxList = [];
+    let cursor = 0;
+    const rawWithoutOtherTags = response.replace(/\[INVENTORY:.*?\]/gi, "").replace(/\[HP:.*?\]/gi, "");
+    for (const m of rawWithoutOtherTags.matchAll(/\[SFX:\s*(.+?)\]/gi)) {
+      sfxList.push({ desc: m[1].trim(), charOffset: m.index - cursor });
+      cursor += m[0].length;
+    }
+
+    // --- Parse [TURN: CharName] to find who the narrator is addressing next ---
+    const turnMatch = response.match(/\[TURN:\s*(.+?)\]/i);
+    const turnName = turnMatch ? turnMatch[1].trim().toLowerCase() : null;
+    const turnIdx = turnName
+      ? characters.findIndex((c) => c.name.toLowerCase().includes(turnName) || turnName.includes(c.name.toLowerCase()))
+      : -1;
+
+    // --- Strip all control tags for the clean displayed text ---
+    const cleanResponse = response
+      .replace(/\[INVENTORY:.*?\]/gi, "")
+      .replace(/\[HP:.*?\]/gi, "")
+      .replace(/\[SFX:.*?\]/gi, "")
+      .replace(/\[TURN:.*?\]/gi, "")
+      .replace(/\[ERROR:.*?\]/g, (m) => m)
+      .trim();
+
+    // --- Update character inventory & HP ---
+    const invChanges = [...response.matchAll(/\[INVENTORY:\s*(\w+)\s+([+-].+?)\]/gi)];
+    const hpChanges = [...response.matchAll(/\[HP:\s*(\w+)\s+([+-]?\d+)\]/gi)];
+    if (invChanges.length || hpChanges.length) {
+      setCharacters((prev) => {
+        const u = prev.map((c) => ({ ...c, inventory: [...c.inventory] }));
+        invChanges.forEach(([, cn, change]) => {
+          const ci = u.findIndex((c) => c.name.toLowerCase() === cn.toLowerCase());
+          if (ci >= 0) {
+            if (change.startsWith("+")) u[ci].inventory.push(change.slice(1).trim());
+            else { const idx = u[ci].inventory.findIndex((i) => i.toLowerCase().includes(change.slice(1).trim().toLowerCase())); if (idx >= 0) u[ci].inventory.splice(idx, 1); }
+          }
+        });
+        hpChanges.forEach(([, cn, amt]) => {
+          const ci = u.findIndex((c) => c.name.toLowerCase() === cn.toLowerCase());
+          if (ci >= 0) u[ci].hp = Math.max(0, Math.min(u[ci].maxHp, u[ci].hp + parseInt(amt)));
+        });
+        return u;
+      });
+    }
+
+    // --- Commit clean text to story log ---
+    logUpdater(cleanResponse);
+
+    // --- Schedule SFX timed to narration playback ---
+    speakNarration(cleanResponse);
+
+    // Return resolved next-turn index (-1 = not specified by narrator)
+    return turnIdx;
+  }, [characters, setCharacters, speakNarration]);
+
+  const startAdventure = async (chars) => {
+    setIsNarrating(true);
+    const charList = chars.map((c) => `${c.name} the ${c.race} ${c.class}`).join(", ");
+    const response = await callNarrator([{ role: "user", content: `The adventure begins! Our heroes are: ${charList}. Set the opening scene — describe the environment, atmosphere, and present a hook for the players.` }]);
+    setIsNarrating(false);
+    processNarratorResponse(response, (clean) => setStoryLog([{ type: "narrator", text: clean }]));
+  };
+
+  // Advance to the next living character in round-robin order
+  const nextAliveChar = useCallback((currentIdx, chars) => {
+    if (chars.length <= 1) return 0;
+    for (let i = 1; i <= chars.length; i++) {
+      const next = (currentIdx + i) % chars.length;
+      if (chars[next].hp > 0) return next;
+    }
+    return currentIdx; // all dead — stay put
+  }, []);
+
+  const handlePlayerAction = async () => {
+    if (!playerInput.trim() || isNarrating) return;
+    const input = playerInput.trim();
+    setPlayerInput(""); stopSpeaking();
+    const ac = characters[activeChar];
+    const newEntry = { type: "player", character: ac?.name, text: input };
+    const updatedLog = [...storyLog, newEntry];
+    setStoryLog(updatedLog); setIsNarrating(true);
+
+    const recentHistory = updatedLog.slice(-20).map((e) =>
+      e.type === "narrator" ? { role: "assistant", content: e.text } : { role: "user", content: `[${e.character || "Player"}]: ${e.text}` }
+    );
+    const response = await callNarrator(recentHistory);
+    setIsNarrating(false);
+    const turnIdx = processNarratorResponse(response, (clean) => setStoryLog([...updatedLog, { type: "narrator", text: clean }]));
+    // Switch to narrator-specified character, or advance round-robin as fallback
+    setActiveChar((cur) => turnIdx >= 0 && characters[turnIdx]?.hp > 0 ? turnIdx : nextAliveChar(cur, characters));
+  };
+
+  const handleDiceRoll = (sides, count = 1, label = "") => {
+    setDiceAnimation(true);
+    setTimeout(() => {
+      const rolls = rollDice(count, sides);
+      const total = rolls.reduce((a, b) => a + b, 0);
+      const statBonus = label && characters[activeChar] ? Math.floor(((characters[activeChar].stats[label] || 10) - 10) / 2) : 0;
+      setDiceResult({ sides, count, rolls, total, bonus: statBonus, grandTotal: total + statBonus, label: label || `${count}d${sides}` });
+      setShowDice(true); setDiceAnimation(false);
+      const bonusStr = statBonus !== 0 ? ` + ${statBonus} (${label}) = ${total + statBonus}` : "";
+      const rollText = `🎲 Rolled ${count}d${sides}: [${rolls.join(", ")}] = ${total}${bonusStr}`;
+      setStoryLog((prev) => [...prev, { type: "roll", character: characters[activeChar]?.name, text: rollText }]);
+      if (voiceEnabled) speakNarration(`Rolled ${count} d ${sides}: ${total}${statBonus ? ` plus ${statBonus} for ${label}` : ""}`);
+    }, 500);
+  };
+
+  const handleNewGame = async () => {
+    stopSpeaking();
+    try { await _store.del("rpg-autosave"); } catch (e) {}
+    setPhase("setup"); setScenario(null); setCharacters([]); setStoryLog([]); setActiveChar(0); setCharCreation(null);
+  };
+
+  // ─── Shared Components ───────────────────────────────────────────────────
+
+  const VoiceBar = () => (
+    <div style={st.voiceBar}>
+      <button onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ ...st.voiceToggle, background: voiceEnabled ? C.rust + "50" : "transparent", borderColor: voiceEnabled ? C.gold : C.border }}>
+        {voiceEnabled ? "🔊" : "🔇"} Voice {voiceEnabled ? "ON" : "OFF"}
+      </button>
+      <button onClick={() => setShowSettings(true)} style={{ ...st.voiceToggle, borderColor: anthropicKey ? C.green : C.red }}>
+        {anthropicKey ? "⚙️ Settings" : "⚠️ Setup Required"}
+      </button>
+      {isSpeaking && <button onClick={stopSpeaking} style={{ ...st.voiceToggle, borderColor: C.red, color: C.red }}>⏹️ Stop</button>}
+      {isGeneratingVoice && <span style={{ fontFamily: "'Crimson Text', serif", fontSize: 12, color: C.amber, alignSelf: "center", animation: "pulse 1.5s ease-in-out infinite" }}>Generating voice...</span>}
+      {kokoroLoading && <span style={{ fontFamily: "'Crimson Text', serif", fontSize: 12, color: C.textDim, alignSelf: "center" }}>Loading voice model...</span>}
+    </div>
+  );
+
+  const SettingsModal = () => {
+    const [tempAnthropicKey, setTempAnthropicKey] = useState(anthropicKey);
+    const [testingApi, setTestingApi] = useState(false);
+    const [apiTestResult, setApiTestResult] = useState("");
+    const [testingVoice, setTestingVoice] = useState(false);
+
+    const handleTestVoice = async (voiceId) => {
+      if (testingVoice) return;
+      setTestingVoice(true);
+      try {
+        const { kokoro } = getProviders();
+        const result = await kokoro.generateTestAudio("Greetings, brave adventurer. I am your narrator, and your fate rests in my hands tonight.", { voice: voiceId, modelId: kokoroModelId });
+        if (!result) { setTestingVoice(false); return; }
+        result.audio.onended = () => { result.cleanup(); setTestingVoice(false); };
+        result.audio.onerror = () => { result.cleanup(); setTestingVoice(false); };
+        result.audio.play();
+      } catch (e) { console.error("Voice test error:", e); setTestingVoice(false); setSaveMsg("Voice test failed: " + (e.message || "Unknown error")); setTimeout(() => setSaveMsg(""), 4000); }
+    };
+
+    const handleSelectVoice = async (voiceId) => {
+      setKokoroVoice(voiceId);
+      try { await _store.set("rpg-kokoro-voice", voiceId); } catch (e) {}
+    };
+
+    const handleSelectModel = async (modelId) => {
+      setKokoroModelId(modelId);
+      kokoroRef.current = null;
+      try { await _store.set("rpg-kokoro-model", modelId); } catch (e) {}
+    };
+
+    return (
+      <div style={st.modal} onClick={() => setShowSettings(false)}>
+        <div style={st.modalContent} onClick={(e) => e.stopPropagation()}>
+          <h2 style={st.modalTitle}>Settings</h2>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>Anthropic API Key <span style={{ fontSize: 11, color: C.red }}>(required)</span></label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="text" value={tempAnthropicKey} onChange={(e) => setTempAnthropicKey(e.target.value)} placeholder="sk-ant-..." style={{ ...st.textInput, flex: 1, fontSize: 13, fontFamily: "monospace" }} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
+              <button onClick={async () => { const k = tempAnthropicKey.trim(); setAnthropicKey(k); try { await _store.set("rpg-anthropic-key", k); } catch(e){} setSaveMsg("\u2705 Key saved!"); setTimeout(() => setSaveMsg(""), 2000); }} disabled={!tempAnthropicKey.trim()} style={{ ...st.slotBtn, borderColor: C.gold, color: C.gold, padding: "8px 16px", opacity: tempAnthropicKey.trim() ? 1 : 0.4 }}>Save</button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <button onClick={async () => {
+                const k = (tempAnthropicKey || anthropicKey).trim();
+                if (!k) { setApiTestResult("\u274c No key entered"); return; }
+                setTestingApi(true); setApiTestResult("Testing...");
+                try {
+                  const r = await fetch("https://api.anthropic.com/v1/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-api-key": k, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+                    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 50, messages: [{ role: "user", content: "Say OK" }] }),
+                  });
+                  if (r.ok) { setApiTestResult("\u2705 Connection successful!"); setAnthropicKey(k); try { await _store.set("rpg-anthropic-key", k); } catch(e){} }
+                  else if (r.status === 401) setApiTestResult("\u274c Invalid API key");
+                  else if (r.status === 403) setApiTestResult("\u274c Enable 'direct browser access' in Anthropic console");
+                  else { const t = await r.text().catch(()=>""); let msg = ""; try { msg = JSON.parse(t)?.error?.message || t; } catch(e) { msg = t; } if (r.status === 400) setApiTestResult("\u274c " + msg); else setApiTestResult("\u274c Error " + r.status + ": " + msg); }
+                } catch(e) { setApiTestResult("\u274c " + (e.message || "Network error")); }
+                setTestingApi(false);
+              }} disabled={testingApi} style={{ ...st.slotBtn, borderColor: C.amber, color: C.amber, padding: "6px 14px" }}>
+                {testingApi ? "Testing..." : "\ud83d\udd0c Test Connection"}
+              </button>
+              {apiTestResult && <div style={{ fontSize: 12, color: apiTestResult.includes("\u2705") ? C.green : C.red, marginTop: 6, wordBreak: "break-word", lineHeight: 1.5 }}>{apiTestResult}</div>}
+            </div>
+            <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>Get key at <span style={{ color: C.amber }}>console.anthropic.com</span>. Enable "direct browser access" when creating the key.</div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>Narrator Voice</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
+              {KOKORO_VOICES.map((v) => (
+                <div key={v.id} style={{ ...st.saveSlotRow, borderColor: v.id === kokoroVoice ? C.gold : C.border, background: v.id === kokoroVoice ? C.rust + "20" : C.bg }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Cinzel', serif", fontSize: 13, color: v.id === kokoroVoice ? C.gold : C.text }}>{v.name}</div>
+                    <div style={{ fontSize: 11, color: C.textDim }}>{v.desc}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => handleTestVoice(v.id)} disabled={testingVoice || kokoroLoading} style={{ ...st.slotBtn, fontSize: 12, opacity: testingVoice || kokoroLoading ? 0.4 : 1 }}>
+                      {testingVoice ? "..." : kokoroLoading ? "Loading..." : "Test"}
+                    </button>
+                    <button onClick={() => handleSelectVoice(v.id)} style={{ ...st.slotBtn, borderColor: v.id === kokoroVoice ? C.gold : C.green, color: v.id === kokoroVoice ? C.gold : C.green, fontSize: 12 }}>
+                      {v.id === kokoroVoice ? "Selected" : "Select"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>
+              Voice runs locally in your browser via Kokoro TTS (~80MB download on first use, cached after).
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>TTS Model</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {KOKORO_MODELS.map((m) => (
+                <button key={m.id} onClick={() => handleSelectModel(m.id)} style={{ ...st.saveSlotRow, borderColor: m.id === kokoroModelId ? C.gold : C.border, background: m.id === kokoroModelId ? C.rust + "20" : C.bg, cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: "'Cinzel', serif", fontSize: 13, color: m.id === kokoroModelId ? C.gold : C.text }}>{m.name} {m.id === kokoroModelId ? "Selected" : ""}</div>
+                    <div style={{ fontSize: 11, color: C.textDim }}>{m.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={() => setShowSettings(false)} style={st.closeModalBtn}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
+  const SaveLoadModal = () => (
+    <div style={st.modal} onClick={() => setShowSaveLoad(false)}>
+      <div style={st.modalContent} onClick={(e) => e.stopPropagation()}>
+        <h2 style={st.modalTitle}>💾 Save / Load Game</h2>
+        {saveMsg && <div style={{ color: C.gold, textAlign: "center", marginBottom: 12, fontFamily: "'Cinzel', serif", fontSize: 14 }}>{saveMsg}</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {Array.from({ length: MAX_SAVE_SLOTS }, (_, i) => i + 1).map((slot) => {
+            const data = saveSlots[slot - 1];
+            return (
+              <div key={slot} style={st.saveSlotRow}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Cinzel', serif", fontSize: 14, color: data ? C.text : C.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    Slot {slot}: {data ? data.label : "— Empty —"}
+                  </div>
+                  {data && <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>{new Date(data.savedAt).toLocaleString()}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => saveToSlot(slot)} style={st.slotBtn}>💾</button>
+                  {data && <button onClick={() => loadFromSlot(slot)} style={{ ...st.slotBtn, borderColor: C.green, color: C.green }}>📂</button>}
+                  {data && <button onClick={() => deleteSlot(slot)} style={{ ...st.slotBtn, borderColor: C.red, color: C.red }}>🗑️</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <button onClick={() => setShowSaveLoad(false)} style={st.closeModalBtn}>Close</button>
+      </div>
+    </div>
+  );
+
+  const Fonts = () => <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />;
+
+  // ─── LOADING ─────────────────────────────────────────────────────────────
+
+  if (phase === "loading") return (
+    <div style={{ ...st.container, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+      <Fonts /><div style={{ textAlign: "center" }}><div style={{ fontSize: 48, marginBottom: 16 }}>⚔️</div><div style={{ fontFamily: "'Cinzel', serif", fontSize: 22, color: C.gold }}>Loading...</div></div>
+    </div>
+  );
+
+  // ─── SETUP ───────────────────────────────────────────────────────────────
+
+  if (phase === "setup") return (
+    <div style={st.container}>
+      <Fonts />
+      <header style={st.header}><h1 style={st.title}>⚔️ The Narrator</h1><p style={st.subtitle}>A Pen & Paper RPG Game Master</p></header>
+      <VoiceBar />
+      {saveSlots.some(Boolean) && (
+        <section style={st.section}>
+          <h2 style={st.sectionTitle}>📂 Continue a Saved Game</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {saveSlots.map((data, i) => data ? (
+              <div key={i} style={{ ...st.saveSlotRow, borderColor: C.border, background: C.bgCard, flexWrap: "wrap", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Cinzel', serif", fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {data.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>
+                    Slot {i + 1} · {new Date(data.savedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => loadFromSlot(i + 1)} style={{ ...st.slotBtn, borderColor: C.green, color: C.green, padding: "6px 14px", fontSize: 13 }}>▶ Load</button>
+                  <button onClick={() => deleteSlot(i + 1)} style={{ ...st.slotBtn, borderColor: C.red, color: C.red }} title="Delete save">🗑️</button>
+                </div>
+              </div>
+            ) : null)}
+          </div>
+        </section>
+      )}
+      <section style={st.section}>
+        <h2 style={st.sectionTitle}>Choose Your Scenario</h2>
+        <div style={{ fontSize: 13, color: C.textDim, marginBottom: 10, fontFamily: "'Cinzel', serif", letterSpacing: 1 }}>⚔️ CLASSIC ADVENTURES</div>
+        <div style={st.scenarioGrid}>
+          {SCENARIOS.filter((sc) => ["dark_fantasy","cosmic_horror","space_frontier","post_apocalypse","pirate_seas","cyberpunk"].includes(sc.id)).map((sc) => (
+            <button key={sc.id} onClick={() => setScenario(sc.id)} style={{ ...st.scenarioCard, borderColor: scenario === sc.id ? C.gold : C.border, background: scenario === sc.id ? "linear-gradient(135deg, #1a1510, #12121a)" : C.bgCard, boxShadow: scenario === sc.id ? `0 0 20px ${C.gold}30` : "none" }}>
+              <span style={{ fontSize: 28 }}>{sc.icon}</span>
+              <span style={st.scenarioName}>{sc.name}</span>
+              <span style={st.scenarioDesc}>{sc.desc}</span>
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 13, color: C.textDim, marginBottom: 10, marginTop: 20, fontFamily: "'Cinzel', serif", letterSpacing: 1 }}>🌍 CHANGE THE WORLD</div>
+        <div style={st.scenarioGrid}>
+          {SCENARIOS.filter((sc) => ["green_revolution","asteroid_mining","zero_hunger","ocean_rescue","digital_democracy"].includes(sc.id)).map((sc) => (
+            <button key={sc.id} onClick={() => setScenario(sc.id)} style={{ ...st.scenarioCard, borderColor: scenario === sc.id ? C.gold : C.border, background: scenario === sc.id ? "linear-gradient(135deg, #0d1510, #12121a)" : C.bgCard, boxShadow: scenario === sc.id ? `0 0 20px ${C.gold}30` : "none" }}>
+              <span style={{ fontSize: 28 }}>{sc.icon}</span>
+              <span style={st.scenarioName}>{sc.name}</span>
+              <span style={st.scenarioDesc}>{sc.desc}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section style={st.section}>
+        <h2 style={st.sectionTitle}>Choose Your Narrator</h2>
+        <div style={st.scenarioGrid}>
+          {NARRATOR_TYPES.map((nt) => (
+            <button key={nt.id} onClick={() => setSelectedNarrator(nt.id)} style={{ ...st.scenarioCard, borderColor: selectedNarrator === nt.id ? C.gold : C.border, background: selectedNarrator === nt.id ? "linear-gradient(135deg, #1a1510, #12121a)" : C.bgCard, boxShadow: selectedNarrator === nt.id ? `0 0 20px ${C.gold}30` : "none" }}>
+              <span style={{ fontSize: 24 }}>{nt.icon}</span>
+              <span style={st.scenarioName}>{nt.name}</span>
+              <span style={st.scenarioDesc}>{nt.desc}</span>
+            </button>
+          ))}
+        </div>
+        {selectedNarrator === "custom" && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <textarea value={customNarratorPersonality} onChange={(e) => setCustomNarratorPersonality(e.target.value)} placeholder="Describe your narrator's personality, speech patterns, and style... (e.g., 'A sarcastic AI who narrates like a nature documentary')" style={{ ...st.textInput, minHeight: 80, resize: "vertical" }} />
+          </div>
+        )}
+      </section>
+      <section style={st.section}>
+        <h2 style={st.sectionTitle}>Parameters</h2>
+        <div style={st.paramRow}>
+          <label style={st.paramLabel}>Scenario Strictness: <strong style={{ color: C.gold }}>{strictness}/10</strong>
+            <span style={st.paramHint}>{strictness <= 3 ? "🌿 Freeform" : strictness <= 6 ? "⚖️ Balanced" : "🔒 Rigid"}</span>
+          </label>
+          <input type="range" min={1} max={10} value={strictness} onChange={(e) => setStrictness(+e.target.value)} style={st.slider} />
+        </div>
+        <div style={st.paramRow}>
+          <label style={st.paramLabel}>Anti-Cheat: <strong style={{ color: C.gold }}>{antiCheat}/10</strong>
+            <span style={st.paramHint}>{antiCheat <= 3 ? "😏 Lenient" : antiCheat <= 6 ? "⚖️ Fair" : "💀 Hardcore"}</span>
+          </label>
+          <input type="range" min={1} max={10} value={antiCheat} onChange={(e) => setAntiCheat(+e.target.value)} style={st.slider} />
+        </div>
+      </section>
+      <section style={st.section}>
+        <h2 style={st.sectionTitle}>How Many Adventurers?</h2>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          {[1, 2, 3, 4].map((n) => (
+            <button key={n} onClick={() => setNumPlayers(n)} style={{ ...st.numBtn, borderColor: numPlayers === n ? C.gold : C.border, background: numPlayers === n ? C.rust + "40" : "transparent", color: numPlayers === n ? C.gold : C.textDim }}>{n}</button>
+          ))}
+        </div>
+      </section>
+      <button disabled={!scenario} onClick={handleStartCharCreation} style={{ ...st.primaryBtn, opacity: scenario ? 1 : 0.4, cursor: scenario ? "pointer" : "not-allowed" }}>⚔️ Forge Your Characters</button>
+      {showSaveLoad && <SaveLoadModal />}
+      {showSettings && <SettingsModal />}
+      {saveMsg && <div style={st.toast}>{saveMsg}</div>}
+    </div>
+  );
+
+  // ─── CHARACTER CREATION ──────────────────────────────────────────────────
+
+  if (phase === "character" && charCreation) {
+    const classes = CLASSES[scenario] || [], races = RACES[scenario] || [], cc = charCreation;
+    return (
+      <div style={st.container}>
+        <Fonts />
+        <header style={st.header}><h1 style={st.title}>⚒️ Character Forge</h1><p style={st.subtitle}>Adventurer {currentPlayerSetup + 1} of {numPlayers}</p></header>
+        <section style={st.section}>
+          <h2 style={st.sectionTitle}>Name</h2>
+          <input type="text" placeholder="Enter a name..." value={cc.name} onChange={(e) => setCharCreation((p) => ({ ...p, name: e.target.value }))} style={st.textInput} />
+        </section>
+        <section style={st.section}>
+          <h2 style={st.sectionTitle}>Race</h2>
+          <div style={st.optionRow}>
+            {races.map((r) => <button key={r} onClick={() => setCharCreation((p) => ({ ...p, race: r }))} style={{ ...st.optionBtn, borderColor: cc.race === r ? C.gold : C.border, background: cc.race === r ? C.rust + "30" : "transparent", color: cc.race === r ? C.gold : C.text }}>{r}</button>)}
+          </div>
+        </section>
+        <section style={st.section}>
+          <h2 style={st.sectionTitle}>Class</h2>
+          <div style={st.optionRow}>
+            {classes.map((c) => <button key={c} onClick={() => setCharCreation((p) => ({ ...p, charClass: c }))} style={{ ...st.optionBtn, borderColor: cc.charClass === c ? C.gold : C.border, background: cc.charClass === c ? C.rust + "30" : "transparent", color: cc.charClass === c ? C.gold : C.text }}>{c}</button>)}
+          </div>
+          {cc.charClass && (
+            <div style={{ marginTop: 12, padding: 12, background: C.bgCard, borderRadius: 8, border: `1px solid ${C.border}` }}>
+              <div style={{ color: C.textDim, fontSize: 13 }}>Starting Skills: <span style={{ color: C.amber }}>{(SKILL_TREES[scenario]?.[cc.charClass] || []).join(" • ")}</span></div>
+              <div style={{ color: C.textDim, fontSize: 13, marginTop: 6 }}>Starting Gear: <span style={{ color: C.amber }}>{(STARTER_ITEMS[scenario]?.[cc.charClass] || []).join(" • ")}</span></div>
+            </div>
+          )}
+        </section>
+        <section style={st.section}>
+          <h2 style={st.sectionTitle}>Backstory <span style={{ fontSize: 13, color: C.textDim, marginLeft: 8 }}>(optional)</span></h2>
+          <textarea
+            value={cc.backstory || ""}
+            onChange={(e) => setCharCreation((p) => ({ ...p, backstory: e.target.value }))}
+            placeholder="What drives this character? Where do they come from? What haunts them? (The narrator will weave this into the story...)"
+            style={{ ...st.textInput, minHeight: 80, resize: "vertical", lineHeight: 1.5 }}
+          />
+          {cc.name && cc.race && cc.charClass && !cc.backstory && (
+            <button onClick={async () => {
+              setSaveMsg("✨ Generating backstory...");
+              try {
+                const resp = await fetch("https://api.anthropic.com/v1/messages", {
+                  method: "POST", headers: { "Content-Type": "application/json", "x-api-key": _getAnthropicKey(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+                  body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 300,
+                    messages: [{ role: "user", content: `Generate a brief, compelling 2-3 sentence backstory for a ${cc.race} ${cc.charClass} named ${cc.name} in a ${SCENARIOS.find(s => s.id === scenario)?.name || "fantasy"} setting. Make it personal, with a clear motivation and a hint of darkness or conflict. Be concise.` }]
+                  }),
+                });
+                const data = await resp.json();
+                const text = data.content?.map(b => b.text || "").join("") || "";
+                if (text) setCharCreation((p) => ({ ...p, backstory: text }));
+                setSaveMsg("");
+              } catch(e) { setSaveMsg("Could not generate — write your own!"); setTimeout(() => setSaveMsg(""), 2000); }
+            }} style={{ ...st.miniBtn, marginTop: 8, padding: "6px 14px", borderColor: C.gold, color: C.gold }}>
+              ✨ Generate Backstory
+            </button>
+          )}
+        </section>
+        <section style={st.section}>
+          <h2 style={st.sectionTitle}>Stats <span style={{ fontSize: 13, color: C.textDim, marginLeft: 8 }}>(4d6 drop lowest — {cc.rerolls} rerolls)</span></h2>
+          {Object.keys(cc.stats).length === 0
+            ? <button onClick={handleRollStats} style={st.rollBtn}>🎲 Roll Stats</button>
+            : <div style={st.statGrid}>{STAT_NAMES.map((s) => (
+                <div key={s} style={st.statCard}>
+                  <div style={st.statName}>{s}</div>
+                  <div style={st.statValue}>{cc.stats[s]}</div>
+                  <div style={st.statMod}>{Math.floor((cc.stats[s] - 10) / 2) >= 0 ? "+" : ""}{Math.floor((cc.stats[s] - 10) / 2)}</div>
+                  {cc.statDetails?.[s] && <div style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>[{cc.statDetails[s].rolls.join(",")}]</div>}
+                  <button disabled={cc.rerolls <= 0} onClick={() => handleRerollStat(s)} style={{ ...st.miniBtn, opacity: cc.rerolls > 0 ? 1 : 0.3 }}>🎲</button>
+                </div>
+              ))}</div>}
+        </section>
+        <button disabled={!cc.name || !cc.race || !cc.charClass || Object.keys(cc.stats).length < 6} onClick={handleFinishCharacter} style={{ ...st.primaryBtn, opacity: cc.name && cc.race && cc.charClass && Object.keys(cc.stats).length >= 6 ? 1 : 0.4 }}>
+          {currentPlayerSetup + 1 < numPlayers ? "✅ Finish & Create Next" : "⚔️ Begin the Adventure!"}
+        </button>
+      </div>
+    );
+  }
+
+  // ─── GAME PHASE ──────────────────────────────────────────────────────────
+
+  if (phase === "game") {
+    const ac = characters[activeChar];
+    return (
+      <div style={st.gameContainer} className="rpg-game-container">
+        <Fonts />
+        <div style={st.topBar}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "'Cinzel', serif", color: C.gold, fontSize: 15, fontWeight: 700 }}>⚔️ The Narrator</span>
+            <span style={{ color: C.textDim, fontSize: 12 }}>{SCENARIOS.find((x) => x.id === scenario)?.icon} {SCENARIOS.find((x) => x.id === scenario)?.name}</span>
+          </div>
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+            <button onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ ...st.topBtn, background: voiceEnabled ? C.rust + "40" : "transparent", borderColor: voiceEnabled ? C.gold : C.border }} title="Toggle narrator voice">{voiceEnabled ? "🔊" : "🔇"}</button>
+            {isSpeaking && <button onClick={stopSpeaking} style={{ ...st.topBtn, borderColor: C.red }} title="Stop narration">⏹️</button>}
+            <button onClick={() => setShowSettings(true)} title="Settings" style={{ ...st.topBtn, borderColor: anthropicKey ? C.green : C.red }}>⚙️</button>
+            <button onClick={() => setShowCharSheet(!showCharSheet)} style={st.topBtn} title="Character sheets">📋</button>
+            <button onClick={() => setShowInventory(!showInventory)} style={st.topBtn} title="Inventory">🎒</button>
+            <button onClick={() => { refreshSlots(); setShowSaveLoad(true); }} style={st.topBtn} title="Save/Load">💾</button>
+            <button onClick={handleNewGame} style={{ ...st.topBtn, borderColor: C.red }} title="New game">🔄</button>
+          </div>
+        </div>
+
+        {characters.length > 1 && (
+          <div style={st.charTabs}>
+            {characters.map((c, i) => (
+              <button key={c.id} onClick={() => setActiveChar(i)} title={i === activeChar ? "Current turn" : `Switch to ${c.name}`}
+                style={{ ...st.charTab, borderBottomColor: i === activeChar ? C.gold : "transparent", color: i === activeChar ? C.gold : C.textDim, background: i === activeChar ? C.gold + "12" : "transparent", position: "relative" }}>
+                {i === activeChar && <span style={{ fontSize: 10, marginRight: 4 }}>⚔️</span>}
+                {c.name}
+                <span style={{ ...st.hpBadge, opacity: c.hp === 0 ? 0.4 : 1 }}>❤️ {c.hp}/{c.maxHp}</span>
+                {i === activeChar && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, color: C.gold, fontFamily: "'Cinzel', serif", fontWeight: 700 }}>TURN</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={st.gameBody} className="rpg-game-body">
+          <div style={st.storyPanel}>
+            <div style={st.storyScroll} className="rpg-story-scroll">
+              {storyLog.map((entry, i) => (
+                <div key={i} style={entry.type === "narrator" ? st.narratorMsg : entry.type === "roll" ? st.rollMsg : st.playerMsg}>
+                  {entry.type === "narrator" && <span style={st.narratorLabel}>🗣️ The Narrator</span>}
+                  {entry.type === "player" && <span style={st.playerLabel}>🗡️ {entry.character}</span>}
+                  {entry.type === "roll" && <span style={st.rollLabel}>🎲 {entry.character}</span>}
+                  <div style={st.msgText}>{entry.text}</div>
+                  {entry.type === "narrator" && voiceEnabled && (
+                    <button onClick={() => speakNarration(entry.text)} disabled={isSpeaking}
+                      style={{ marginTop: 6, padding: "2px 8px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 4, color: isSpeaking ? C.textDim : C.textDim, fontSize: 11, cursor: isSpeaking ? "not-allowed" : "pointer", fontFamily: "'Crimson Text', serif", opacity: isSpeaking ? 0.4 : 1 }}>
+                      {isGeneratingVoice ? "🔊 Generating..." : isSpeaking ? "🔊 Playing..." : "🔊 Replay"}
+                    </button>
+                  )}
+                </div>
+              ))}
+              {isNarrating && (
+                <div style={st.narratorMsg}>
+                  <span style={st.narratorLabel}>🗣️ The Narrator</span>
+                  <div style={{ ...st.msgText, fontStyle: "italic", color: C.textDim }}><span style={{ display: "inline-block", animation: "pulse 1.5s ease-in-out infinite" }}>*scratches chin and ponders...*</span></div>
+                </div>
+              )}
+              <div ref={storyEndRef} />
+            </div>
+
+            <div style={st.inputBar} className="rpg-input-bar">
+              <div style={{ flex: 1, position: "relative" }}>
+                {interimText && <div style={{ position: "absolute", top: -22, left: 4, fontSize: 11, color: C.amber, fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "calc(100% - 8px)" }}>{interimText}...</div>}
+                <input type="text" placeholder={isListening ? "🎤 Listening..." : ac ? `${characters.length > 1 ? `[${ac.name}'s turn] ` : ""}What does ${ac.name} do?` : "Enter action..."} value={playerInput}
+                  onChange={(e) => setPlayerInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePlayerAction()} style={st.storyInput} disabled={isNarrating} />
+              </div>
+              <button onClick={isListening ? stopListening : startListening} disabled={isListening ? false : isNarrating} title={isListening ? "Stop listening" : "Start voice input"}
+                style={{ ...st.micBtn, background: isListening ? C.red + "60" : "transparent", borderColor: isListening ? C.red : C.border, animation: isListening ? "micPulse 1s ease-in-out infinite" : "none", opacity: !isListening && isNarrating ? 0.4 : 1 }}>
+                {isListening ? "⏹️" : "🎤"}
+              </button>
+              <button onClick={handlePlayerAction} disabled={isNarrating || !playerInput.trim()} style={{ ...st.sendBtn, opacity: isNarrating || !playerInput.trim() ? 0.4 : 1 }}>
+                {isNarrating ? "..." : "⚔️"}
+              </button>
+            </div>
+          </div>
+
+          <div style={st.sidePanel} className="rpg-side-panel">
+            <div>
+              <h3 style={st.sidePanelTitle}>🎲 Dice</h3>
+              <div style={st.diceGrid}>
+                {[4, 6, 8, 10, 12, 20, 100].map((d) => (
+                  <button key={d} onClick={() => handleDiceRoll(d)} style={{ ...st.diceBtn, animation: diceAnimation ? "shake 0.3s" : "none" }}>d{d}</button>
+                ))}
+              </div>
+              {ac && <>
+                <h4 style={{ color: C.textDim, fontSize: 11, margin: "10px 0 6px", fontFamily: "'Cinzel', serif" }}>Stat Check</h4>
+                <div style={st.diceGrid}>
+                  {STAT_NAMES.map((s) => (
+                    <button key={s} onClick={() => handleDiceRoll(20, 1, s)} style={st.statRollBtn}>
+                      {s}<span style={{ fontSize: 10, color: C.textDim }}>{Math.floor(((ac.stats[s] || 10) - 10) / 2) >= 0 ? "+" : ""}{Math.floor(((ac.stats[s] || 10) - 10) / 2)}</span>
+                    </button>
+                  ))}
+                </div>
+              </>}
+              {diceResult && showDice && (
+                <div style={st.diceResultBox}>
+                  <div style={{ fontSize: 11, color: C.textDim }}>{diceResult.label}</div>
+                  <div style={{ fontSize: 26, fontWeight: 900, color: C.gold, fontFamily: "'Cinzel', serif" }}>{diceResult.grandTotal}</div>
+                  <div style={{ fontSize: 11, color: C.textDim }}>[{diceResult.rolls.join(",")}]{diceResult.bonus ? ` +${diceResult.bonus}` : ""}</div>
+                </div>
+              )}
+            </div>
+            {ac && (
+              <div>
+                <h3 style={st.sidePanelTitle}>📊 {ac.name}</h3>
+                <div style={st.hpBar}><div style={{ ...st.hpFill, width: `${Math.max(0, (ac.hp / ac.maxHp) * 100)}%` }} /><span style={st.hpText}>❤️ {ac.hp}/{ac.maxHp}</span></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
+                  {STAT_NAMES.map((s) => <div key={s} style={st.miniStat}><span style={{ fontSize: 10, color: C.textDim }}>{s}</span><span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{ac.stats[s]}</span></div>)}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, color: C.textDim }}>Lv.{ac.level} • XP: {ac.xp}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {showInventory && (
+          <div style={st.modal} onClick={() => setShowInventory(false)}>
+            <div style={st.modalContent} onClick={(e) => e.stopPropagation()}>
+              <h2 style={st.modalTitle}>🎒 Inventory</h2>
+              {characters.map((c) => (
+                <div key={c.id} style={{ marginBottom: 16 }}>
+                  <h3 style={{ color: C.gold, fontFamily: "'Cinzel', serif", fontSize: 16, marginBottom: 8 }}>{c.name}</h3>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {c.inventory.map((item, i) => <span key={i} style={st.itemTag}>{item}</span>)}
+                    {!c.inventory.length && <span style={{ color: C.textDim, fontStyle: "italic" }}>Empty pockets...</span>}
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => setShowInventory(false)} style={st.closeModalBtn}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {showCharSheet && (
+          <div style={st.modal} onClick={() => setShowCharSheet(false)}>
+            <div style={st.modalContent} onClick={(e) => e.stopPropagation()}>
+              <h2 style={st.modalTitle}>📋 Character Sheets</h2>
+              {characters.map((c) => (
+                <div key={c.id} style={st.charSheetCard}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h3 style={{ color: C.gold, fontFamily: "'Cinzel', serif", fontSize: 18, margin: 0 }}>{c.name}</h3>
+                    <span style={{ color: C.textDim, fontSize: 13 }}>Lv.{c.level} {c.race} {c.class}</span>
+                  </div>
+                  <div style={st.hpBar}><div style={{ ...st.hpFill, width: `${(c.hp / c.maxHp) * 100}%` }} /><span style={st.hpText}>❤️ {c.hp}/{c.maxHp}</span></div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, margin: "10px 0" }}>
+                    {STAT_NAMES.map((s) => <div key={s} style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: C.textDim }}>{s}</div><div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{c.stats[s]}</div><div style={{ fontSize: 11, color: C.amber }}>{Math.floor((c.stats[s] - 10) / 2) >= 0 ? "+" : ""}{Math.floor((c.stats[s] - 10) / 2)}</div></div>)}
+                  </div>
+                  <div style={{ marginBottom: 6 }}><span style={{ fontSize: 12, color: C.textDim }}>Skills: </span><span style={{ fontSize: 13, color: C.amber }}>{c.skills.join(" • ")}</span></div>
+                  <div><span style={{ fontSize: 12, color: C.textDim }}>Inventory: </span><span style={{ fontSize: 13, color: C.text }}>{c.inventory.join(" • ") || "Empty"}</span></div>
+                </div>
+              ))}
+              <button onClick={() => setShowCharSheet(false)} style={st.closeModalBtn}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {showSaveLoad && <SaveLoadModal />}
+        {showSettings && <SettingsModal />}
+        {saveMsg && <div style={st.toast}>{saveMsg}</div>}
+
+        <style>{`
+          @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px) rotate(-2deg)}75%{transform:translateX(3px) rotate(2deg)}}
+          @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+          @keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(158,48,48,.4)}50%{box-shadow:0 0 0 10px rgba(158,48,48,0)}}
+          @keyframes toastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
+          @media(max-width:700px){
+            /* Game container: natural height so the whole page scrolls */
+            .rpg-game-container{height:auto!important;min-height:100dvh;overflow-y:auto!important;overflow-x:hidden!important}
+            /* Game body: column layout, no clipping */
+            .rpg-game-body{flex-direction:column!important;overflow:visible!important;flex:none!important}
+            /* Story scroll: fixed window with internal scroll */
+            .rpg-story-scroll{flex:none!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;height:45dvh!important;min-height:200px!important}
+            /* Input bar: sticky so it stays above keyboard */
+            .rpg-input-bar{position:sticky!important;bottom:0!important;z-index:50!important}
+            /* Side panel: full-width horizontal row below the story+input */
+            .rpg-side-panel{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;width:100%!important;min-width:unset!important;border-left:none!important;border-top:2px solid #2a2a3a!important;overflow-y:visible!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:max(12px,env(safe-area-inset-bottom))!important}
+          }
+          @media(max-width:480px){
+            .rpg-story-scroll{height:40dvh!important}
+          }
+          input::placeholder{color:${C.textDim}} input:focus{outline:none;border-color:${C.gold}!important}
+          ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${C.bg}}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}::-webkit-scrollbar-thumb:hover{background:${C.rust}}
+        `}</style>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const st = {
+  container: { minHeight: "100vh", background: "linear-gradient(180deg, #0a0a0f 0%, #0d0d14 100%)", color: "#e8dcc8", fontFamily: "'Crimson Text', Georgia, serif", padding: "24px 16px", paddingBottom: 80, maxWidth: 800, margin: "0 auto" },
+  header: { textAlign: "center", marginBottom: 28 },
+  title: { fontFamily: "'Cinzel', serif", fontSize: 34, fontWeight: 900, color: "#c9a04a", margin: 0, letterSpacing: 3, textShadow: "0 0 30px rgba(201,160,74,0.2)" },
+  subtitle: { fontFamily: "'Cinzel', serif", fontSize: 13, color: "#8a8078", letterSpacing: 4, textTransform: "uppercase", marginTop: 8 },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontFamily: "'Cinzel', serif", fontSize: 17, fontWeight: 700, color: "#d4915e", marginBottom: 12, paddingBottom: 6, borderBottom: "1px solid #2a2a3a" },
+  scenarioGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 },
+  scenarioCard: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 10px", borderRadius: 10, border: "2px solid #2a2a3a", background: "#12121a", cursor: "pointer", transition: "all 0.2s", textAlign: "center", fontFamily: "inherit", color: "inherit" },
+  scenarioName: { fontFamily: "'Cinzel', serif", fontSize: 13, fontWeight: 700, color: "#e8dcc8" },
+  scenarioDesc: { fontSize: 11, color: "#8a8078", lineHeight: 1.3 },
+  paramRow: { marginBottom: 16 },
+  paramLabel: { display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: "#e8dcc8", marginBottom: 6 },
+  paramHint: { display: "block", fontSize: 12, color: "#8a8078", marginTop: 2, fontFamily: "'Crimson Text', serif" },
+  slider: { width: "100%", height: 6, WebkitAppearance: "none", appearance: "none", borderRadius: 3, background: "#2a2a3a", outline: "none", accentColor: "#c9a04a" },
+  numBtn: { width: 48, height: 48, borderRadius: 8, border: "2px solid #2a2a3a", background: "transparent", fontSize: 20, fontFamily: "'Cinzel', serif", fontWeight: 700, cursor: "pointer" },
+  primaryBtn: { display: "block", width: "100%", padding: "16px 24px", background: "linear-gradient(135deg, #a0522d, #8b7432)", border: "2px solid #c9a04a", borderRadius: 10, fontFamily: "'Cinzel', serif", fontSize: 18, fontWeight: 700, color: "#f4ead8", cursor: "pointer", letterSpacing: 1, textShadow: "0 1px 3px rgba(0,0,0,0.5)", marginTop: 16, boxSizing: "border-box" },
+  textInput: { width: "100%", padding: "12px 16px", background: "#12121a", border: "2px solid #2a2a3a", borderRadius: 8, color: "#e8dcc8", fontSize: 16, fontFamily: "'Crimson Text', serif", boxSizing: "border-box" },
+  optionRow: { display: "flex", flexWrap: "wrap", gap: 8 },
+  optionBtn: { padding: "8px 14px", borderRadius: 6, border: "2px solid #2a2a3a", background: "transparent", fontSize: 14, fontFamily: "'Cinzel', serif", cursor: "pointer" },
+  rollBtn: { display: "block", width: "100%", padding: "14px", background: "#12121a", border: "2px solid #c9a04a", borderRadius: 8, fontFamily: "'Cinzel', serif", fontSize: 16, fontWeight: 700, color: "#c9a04a", cursor: "pointer", boxSizing: "border-box" },
+  statGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 },
+  statCard: { textAlign: "center", padding: 10, background: "#12121a", borderRadius: 8, border: "1px solid #2a2a3a" },
+  statName: { fontFamily: "'Cinzel', serif", fontSize: 12, fontWeight: 700, color: "#d4915e", letterSpacing: 2 },
+  statValue: { fontSize: 26, fontWeight: 900, color: "#e8dcc8", fontFamily: "'Cinzel', serif" },
+  statMod: { fontSize: 14, color: "#c9a04a", fontWeight: 600 },
+  miniBtn: { marginTop: 4, padding: "3px 8px", background: "transparent", border: "1px solid #2a2a3a", borderRadius: 4, fontSize: 12, fontFamily: "'Crimson Text', serif", color: "#8a8078", cursor: "pointer" },
+  voiceBar: { display: "flex", justifyContent: "center", gap: 10, marginBottom: 20 },
+  voiceToggle: { padding: "8px 16px", borderRadius: 6, border: "2px solid #2a2a3a", background: "transparent", fontFamily: "'Cinzel', serif", fontSize: 13, color: "#e8dcc8", cursor: "pointer" },
+  toast: { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#12121a", border: "2px solid #c9a04a", borderRadius: 8, padding: "10px 24px", fontFamily: "'Cinzel', serif", fontSize: 14, color: "#c9a04a", zIndex: 2000, animation: "toastIn 0.3s ease", boxShadow: "0 4px 20px rgba(0,0,0,0.6)" },
+  gameContainer: { height: "100dvh", display: "flex", flexDirection: "column", background: "#0a0a0f", color: "#e8dcc8", fontFamily: "'Crimson Text', Georgia, serif", overflow: "hidden", paddingTop: "env(safe-area-inset-top)" },
+  topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#12121a", borderBottom: "1px solid #2a2a3a", flexShrink: 0, flexWrap: "wrap", gap: 6 },
+  topBtn: { padding: "5px 10px", background: "transparent", border: "1px solid #2a2a3a", borderRadius: 6, color: "#e8dcc8", fontSize: 13, fontFamily: "'Cinzel', serif", cursor: "pointer" },
+  charTabs: { display: "flex", background: "#12121a", borderBottom: "1px solid #2a2a3a", flexShrink: 0, overflowX: "auto" },
+  charTab: { padding: "8px 16px", background: "transparent", border: "none", borderBottom: "3px solid transparent", fontFamily: "'Cinzel', serif", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" },
+  hpBadge: { fontSize: 11, background: "#0a0a0f", padding: "2px 6px", borderRadius: 4 },
+  gameBody: { display: "flex", flex: 1, overflow: "hidden", minHeight: 0 },
+  storyPanel: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, position: "relative" },
+  storyScroll: { flex: 1, overflowY: "auto", padding: 16, WebkitOverflowScrolling: "touch" },
+  narratorMsg: { marginBottom: 14, padding: 14, background: "linear-gradient(135deg, #151518, #1a1510)", borderRadius: 10, borderLeft: "3px solid #c9a04a" },
+  playerMsg: { marginBottom: 14, padding: 14, background: "#12121a", borderRadius: 10, borderLeft: "3px solid #3a5a8a" },
+  rollMsg: { marginBottom: 10, padding: 10, background: "#12121a", borderRadius: 8, borderLeft: "3px solid #d4915e", fontSize: 14 },
+  narratorLabel: { display: "block", fontFamily: "'Cinzel', serif", fontSize: 12, fontWeight: 700, color: "#c9a04a", marginBottom: 6, letterSpacing: 1 },
+  playerLabel: { display: "block", fontFamily: "'Cinzel', serif", fontSize: 12, fontWeight: 700, color: "#3a5a8a", marginBottom: 6 },
+  rollLabel: { display: "block", fontFamily: "'Cinzel', serif", fontSize: 11, color: "#d4915e", marginBottom: 4 },
+  msgText: { fontSize: 15, lineHeight: 1.7, color: "#e8dcc8", whiteSpace: "pre-wrap" },
+  inputBar: { display: "flex", gap: 8, padding: "10px 14px", paddingBottom: "max(10px, calc(10px + env(safe-area-inset-bottom)))", background: "#12121a", borderTop: "1px solid #2a2a3a", flexShrink: 0, alignItems: "center" },
+  micBtn: { width: 42, height: 42, borderRadius: "50%", border: "2px solid #2a2a3a", background: "transparent", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s" },
+  storyInput: { width: "100%", padding: "10px 14px", background: "#0a0a0f", border: "2px solid #2a2a3a", borderRadius: 8, color: "#e8dcc8", fontSize: 15, fontFamily: "'Crimson Text', serif", boxSizing: "border-box" },
+  sendBtn: { padding: "10px 16px", background: "linear-gradient(135deg, #a0522d, #8b7432)", border: "none", borderRadius: 8, fontSize: 18, cursor: "pointer", flexShrink: 0 },
+  sidePanel: { width: 200, minWidth: 200, background: "#12121a", borderLeft: "1px solid #2a2a3a", overflowY: "auto", padding: 10, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 },
+  sidePanelTitle: { fontFamily: "'Cinzel', serif", fontSize: 13, fontWeight: 700, color: "#d4915e", margin: "0 0 6px 0" },
+  diceGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 },
+  diceBtn: { padding: "7px 4px", background: "#0a0a0f", border: "1px solid #2a2a3a", borderRadius: 6, color: "#e8dcc8", fontSize: 13, fontFamily: "'Cinzel', serif", fontWeight: 700, cursor: "pointer" },
+  statRollBtn: { padding: "5px 4px", background: "#0a0a0f", border: "1px solid #2a2a3a", borderRadius: 6, color: "#d4915e", fontSize: 11, fontFamily: "'Cinzel', serif", fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1 },
+  diceResultBox: { textAlign: "center", marginTop: 8, padding: 8, background: "#0a0a0f", borderRadius: 8, border: "1px solid rgba(201,160,74,0.25)" },
+  hpBar: { position: "relative", height: 18, background: "#0a0a0f", borderRadius: 4, overflow: "hidden", border: "1px solid #2a2a3a", marginTop: 6 },
+  hpFill: { height: "100%", background: "linear-gradient(90deg, #9e3030, #3a7a3a)", transition: "width 0.5s ease", borderRadius: 3 },
+  hpText: { position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", fontSize: 11, fontWeight: 700, color: "#f4ead8", textShadow: "0 1px 2px rgba(0,0,0,0.8)" },
+  miniStat: { display: "flex", flexDirection: "column", alignItems: "center", padding: 3, background: "#0a0a0f", borderRadius: 4 },
+  modal: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 1000, padding: 16, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingTop: "max(16px, env(safe-area-inset-top))", paddingBottom: "max(16px, env(safe-area-inset-bottom))" },
+  modalContent: { background: "#12121a", borderRadius: 12, border: "2px solid #2a2a3a", padding: 24, maxWidth: 550, width: "100%", maxHeight: "90dvh", overflowY: "auto", WebkitOverflowScrolling: "touch" },
+  modalTitle: { fontFamily: "'Cinzel', serif", fontSize: 22, color: "#c9a04a", marginTop: 0, marginBottom: 16 },
+  itemTag: { display: "inline-block", padding: "4px 10px", background: "#0a0a0f", border: "1px solid #2a2a3a", borderRadius: 4, fontSize: 13, color: "#e8dcc8" },
+  charSheetCard: { padding: 14, background: "#0a0a0f", borderRadius: 8, border: "1px solid #2a2a3a", marginBottom: 10 },
+  closeModalBtn: { display: "block", width: "100%", padding: "10px", background: "transparent", border: "1px solid #2a2a3a", borderRadius: 6, color: "#8a8078", fontFamily: "'Cinzel', serif", fontSize: 14, cursor: "pointer", marginTop: 12 },
+  saveSlotRow: { display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#0a0a0f", borderRadius: 8, border: "1px solid #2a2a3a" },
+  slotBtn: { padding: "5px 10px", background: "transparent", border: "1px solid #2a2a3a", borderRadius: 4, color: "#e8dcc8", fontSize: 13, fontFamily: "'Cinzel', serif", cursor: "pointer", whiteSpace: "nowrap" },
+};
+
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(RPGGameMaster));
+  </script>
+</body>
+</html>
