@@ -299,39 +299,46 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
       stopped = false;
 
       // Split text into sentence-level chunks to avoid Kokoro's silent truncation
-      // on long inputs. Each chunk is generated and played sequentially.
+      // on long inputs. Chunks are pipelined: generate chunk N+1 while playing N.
       const chunks = splitTextIntoChunks(text);
       let signalledGenerating = false;
       let signalledPlaying = false;
 
+      // Generate a single chunk, returning its WAV blob (or null if stopped/cached)
+      const genChunk = async (i) => {
+        if (stopped) return null;
+        const key = chunks[i] + "|" + voice;
+        const cached = cacheGet(key);
+        if (cached) return cached;
+
+        if (!signalledGenerating) {
+          signalledGenerating = true;
+          onGenerating?.();
+          await new Promise((r) => setTimeout(r, 0));
+        }
+
+        const result = await tts.generate(chunks[i], { voice, speed: speed || 1.0 });
+        if (stopped) return null;
+
+        const blob = buildWavBlob(result.audio, result.sampling_rate);
+        cachePut(key, blob);
+        return blob;
+      };
+
+      // Pipeline: kick off first chunk, then overlap generation with playback
+      let nextBlobPromise = genChunk(0);
+
       for (let i = 0; i < chunks.length; i++) {
         if (stopped) return { aborted: true };
 
-        const chunkKey = chunks[i] + "|" + voice;
-        let wavBlob = cacheGet(chunkKey);
+        const wavBlob = await nextBlobPromise;
+        if (stopped || !wavBlob) return { aborted: true };
 
-        if (!wavBlob) {
-          // Signal UI that WASM generation is starting (first uncached chunk only)
-          if (!signalledGenerating) {
-            signalledGenerating = true;
-            onGenerating?.();
-            // Yield to browser so React can paint the "Generating voice..." state
-            await new Promise((r) => setTimeout(r, 0));
-          }
-
-          const result = await tts.generate(chunks[i], { voice, speed: speed || 1.0 });
-          if (stopped) return { aborted: true };
-
-          wavBlob = buildWavBlob(result.audio, result.sampling_rate);
-          cachePut(chunkKey, wavBlob);
-
-          // Yield between chunks so the browser can process events
-          if (i < chunks.length - 1) {
-            await new Promise((r) => setTimeout(r, 0));
-          }
+        // Start generating next chunk before playing current one
+        if (i + 1 < chunks.length) {
+          nextBlobPromise = genChunk(i + 1);
         }
 
-        // Signal UI that playback is starting (first chunk only)
         if (!signalledPlaying) {
           signalledPlaying = true;
           onPlaying?.();
