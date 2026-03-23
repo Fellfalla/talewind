@@ -224,8 +224,9 @@ const splitTextIntoChunks = (text, maxLen = 250) => {
 // stop(), isReady(), getName(). Provider factories are plain closures.
 
 const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCacheRef }) => {
-  let currentAudio = null;
+  let currentAudioCtx = null;
   let stopped = false;
+  let genId = 0; // Distinguishes stale generation runs after stop+restart
 
   const loadInstance = async (modelId) => {
     if (kokoroRef.current) return kokoroRef.current;
@@ -253,18 +254,6 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
       setTimeout(() => setSaveMsg(""), 4000);
       return null;
     }
-  };
-
-  // Play a single WAV blob, returning a promise that resolves when playback ends
-  const playBlob = (wavBlob) => {
-    const url = URL.createObjectURL(wavBlob);
-    const audio = new Audio(url);
-    currentAudio = audio;
-    return new Promise((resolve) => {
-      audio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; resolve(); };
-      audio.onerror = () => { URL.revokeObjectURL(url); currentAudio = null; resolve(); };
-      audio.play();
-    });
   };
 
   // Per-chunk LRU cache helpers
@@ -297,63 +286,121 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
       if (!tts) return null; // signal caller to try fallback
 
       stopped = false;
+      const myGen = ++genId;
+      const isStale = () => stopped || myGen !== genId;
 
-      // Split text into sentence-level chunks to avoid Kokoro's silent truncation
-      // on long inputs. Chunks are pipelined: generate chunk N+1 while playing N.
       const chunks = splitTextIntoChunks(text);
-      let signalledGenerating = false;
-      let signalledPlaying = false;
+      if (chunks.length === 0) { onEnd?.(); return; }
 
-      // Generate a single chunk, returning its WAV blob (or null if stopped/cached)
-      const genChunk = async (i) => {
-        if (stopped) return null;
-        const key = chunks[i] + "|" + voice;
-        const cached = cacheGet(key);
-        if (cached) return cached;
+      // AudioContext schedules buffers on the audio thread, which runs
+      // independently of main-thread WASM work — no gaps between chunks.
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      currentAudioCtx = audioCtx;
+      if (audioCtx.state === "suspended") await audioCtx.resume();
 
-        if (!signalledGenerating) {
-          signalledGenerating = true;
-          onGenerating?.();
-          await new Promise((r) => setTimeout(r, 0));
-        }
+      // --- Async queue: producer pushes blobs, consumer pulls them ---
+      const blobs = new Array(chunks.length);
+      let wakeConsumer = null;
+      let genDone = false;
 
-        const result = await tts.generate(chunks[i], { voice, speed: speed || 1.0 });
-        if (stopped) return null;
-
-        const blob = buildWavBlob(result.audio, result.sampling_rate);
-        cachePut(key, blob);
-        return blob;
+      const pushBlob = (idx, blob) => {
+        blobs[idx] = blob;
+        wakeConsumer?.();
+        wakeConsumer = null;
+      };
+      const markGenDone = () => {
+        genDone = true;
+        wakeConsumer?.();
+        wakeConsumer = null;
+      };
+      const awaitBlob = (idx) => {
+        if (blobs[idx] || genDone || isStale()) return Promise.resolve();
+        return new Promise((r) => { wakeConsumer = r; });
       };
 
-      // Pipeline: kick off first chunk, then overlap generation with playback
-      let nextBlobPromise = genChunk(0);
+      // --- Producer: generate all chunks greedily, yielding between WASM calls ---
+      let notifiedGen = false;
+      const produce = async () => {
+        for (let i = 0; i < chunks.length; i++) {
+          if (isStale()) return;
+          const key = chunks[i] + "|" + voice;
+          const cached = cacheGet(key);
+          if (cached) { pushBlob(i, cached); continue; }
+          if (!notifiedGen) { notifiedGen = true; onGenerating?.(); }
+          // Yield so the browser can process events and audio between WASM calls
+          await new Promise((r) => setTimeout(r, 0));
+          if (isStale()) return;
+          const result = await tts.generate(chunks[i], { voice, speed: speed || 1.0 });
+          if (isStale()) return;
+          const blob = buildWavBlob(result.audio, result.sampling_rate);
+          cachePut(key, blob);
+          pushBlob(i, blob);
+        }
+        markGenDone();
+      };
+      produce().catch((e) => { console.error("TTS generation error:", e); markGenDone(); });
+
+      // --- Consumer: decode and schedule blobs on AudioContext for gapless playback ---
+      let notifiedPlay = false;
+      let scheduleTime = audioCtx.currentTime;
+      let lastSource = null;
 
       for (let i = 0; i < chunks.length; i++) {
-        if (stopped) return { aborted: true };
+        while (!blobs[i] && !genDone && !isStale()) await awaitBlob(i);
+        if (isStale()) {
+          try { audioCtx.close(); } catch (_) {}
+          if (currentAudioCtx === audioCtx) currentAudioCtx = null;
+          return { aborted: true };
+        }
+        if (!blobs[i]) break;
 
-        const wavBlob = await nextBlobPromise;
-        if (stopped || !wavBlob) return { aborted: true };
+        if (!notifiedPlay) { notifiedPlay = true; onPlaying?.(); }
 
-        // Start generating next chunk before playing current one
-        if (i + 1 < chunks.length) {
-          nextBlobPromise = genChunk(i + 1);
+        const arrayBuf = await blobs[i].arrayBuffer();
+        let audioBuf;
+        try { audioBuf = await audioCtx.decodeAudioData(arrayBuf); }
+        catch (e) { console.warn("Audio decode failed for chunk", i, e); continue; }
+
+        if (isStale()) {
+          try { audioCtx.close(); } catch (_) {}
+          if (currentAudioCtx === audioCtx) currentAudioCtx = null;
+          return { aborted: true };
         }
 
-        if (!signalledPlaying) {
-          signalledPlaying = true;
-          onPlaying?.();
-        }
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuf;
+        source.connect(audioCtx.destination);
 
-        await playBlob(wavBlob);
-        if (stopped) return { aborted: true };
+        const now = audioCtx.currentTime;
+        if (scheduleTime < now) scheduleTime = now;
+        source.start(scheduleTime);
+        scheduleTime += audioBuf.duration;
+        lastSource = source;
       }
 
-      onEnd?.();
+      // Wait for the last scheduled buffer to finish playing
+      if (lastSource && !isStale()) {
+        await new Promise((resolve) => {
+          lastSource.onended = resolve;
+          // Safety fallback — onended may not fire if context is closing
+          const t = setInterval(() => {
+            if (isStale() || audioCtx.state === "closed") { clearInterval(t); resolve(); }
+          }, 250);
+        });
+      }
+
+      if (currentAudioCtx === audioCtx) currentAudioCtx = null;
+      try { audioCtx.close(); } catch (_) {}
+      if (!isStale()) onEnd?.();
     },
 
     stop: () => {
       stopped = true;
-      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      genId++;
+      if (currentAudioCtx) {
+        try { currentAudioCtx.close(); } catch (_) {}
+        currentAudioCtx = null;
+      }
     },
 
     // Expose for Settings modal voice testing (uses Kokoro directly)
