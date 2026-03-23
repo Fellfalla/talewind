@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rrrusty-rpg-v3';
+const CACHE_NAME = 'rrrusty-rpg-v4';
 const CACHE_URLS = [
   './',
   './index.html',
@@ -18,7 +18,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   // Don't cache API calls
-  if (e.request.url.includes('api.anthropic.com') || e.request.url.includes('api.elevenlabs.io')) {
+  if (e.request.url.includes('api.anthropic.com') || e.request.url.includes('cdn.jsdelivr.net') || e.request.url.includes('huggingface.co')) {
     return;
   }
   e.respondWith(

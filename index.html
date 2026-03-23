@@ -23,6 +23,10 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="module">
+    import { KokoroTTS } from "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
+    window.KokoroTTS = KokoroTTS;
+  </script>
   <script>
     const _store = {
       async get(key) { const v = localStorage.getItem(key); if (v === null) throw new Error("Not found"); return { key, value: v }; },
@@ -112,32 +116,40 @@ const SKILL_TREES = {
 
 const NARRATOR_TYPES = [
   { id: "grizzled_veteran", name: "The Grizzled Veteran", icon: "🗡️", desc: "A battle-scarred old soldier who's seen too much. Deep, gravelly, world-weary. Speaks with dramatic pauses and dark humor.",
-    voiceDesc: "Deep gravelly male voice with dramatic pauses. World-weary and sardonic. Speaks slowly with weight behind each word. Occasional dark chuckle. Think a retired mercenary telling stories by firelight.",
     personality: "You are a grizzled veteran narrator — weathered, sardonic, economical with words. You speak with quiet authority. You've seen enough to know what matters and what doesn't. You give weight to real danger without dramatising every moment." },
   { id: "theatrical_bard", name: "The Theatrical Bard", icon: "🎭", desc: "A flamboyant storyteller who treats every scene like grand theater. Dramatic, poetic, over-the-top.",
-    voiceDesc: "Theatrical, flamboyant male voice with dramatic flair. Rich baritone. Speaks like a Shakespearean actor on stage — grand gestures in every word. Expressive and passionate.",
     personality: "You are a theatrical bard narrator — warm, expressive, fond of vivid imagery. You have a flair for the dramatic but you know when to let a moment breathe. You enjoy a good metaphor and the occasional verse, but you don't overdo it." },
   { id: "ancient_oracle", name: "The Ancient Oracle", icon: "🔮", desc: "A mysterious, ethereal presence that speaks in riddles and prophecy. Whispery, otherworldly, cryptic.",
-    voiceDesc: "Ethereal, whispery voice with an otherworldly quality. Speaks slowly and deliberately, as if seeing the future. Mysterious and ancient. Gender-neutral, ageless.",
     personality: "You are an ancient oracle narrator — measured, ethereal, quietly cryptic. You speak as if you already know what comes next. Your tone is calm and unhurried, with occasional hints at deeper patterns. You don't over-explain the mystery." },
   { id: "noir_detective", name: "The Noir Detective", icon: "🕵️", desc: "A hard-boiled narrator straight from a 1940s crime film. Dry wit, cynical, matter-of-fact.",
-    voiceDesc: "Hard-boiled 1940s detective voice. Dry, cynical, matter-of-fact. Speaks in short punchy sentences. Think Humphrey Bogart meets Raymond Chandler. Jazz-soaked weariness.",
     personality: "You are a noir detective narrator — dry, observant, matter-of-fact. Short sentences. You describe what you see without editorialising too much. Everyone's got an angle. You notice the details others miss and let the atmosphere do the heavy lifting." },
   { id: "cosmic_entity", name: "The Cosmic Entity", icon: "🌌", desc: "An incomprehensible being observing mortals like ants. Amused, detached, occasionally terrifying.",
-    voiceDesc: "Deep, resonant, inhuman voice with subtle echo. Speaks with amused detachment, as if observing insects. Occasionally drops to a whisper that feels vast. Unsettling calm.",
     personality: "You are a cosmic entity narrator — ancient, vast, gently amused. You observe events from a great distance, with occasional dry asides about the smallness of mortal concerns. Your tone is calm rather than menacing, curious rather than condescending." },
   { id: "tavern_keeper", name: "The Tavern Keeper", icon: "🍺", desc: "A warm, folksy storyteller who gossips and jokes. Friendly, earthy, full of local color.",
-    voiceDesc: "Warm, folksy voice with a slight accent. Friendly and chatty. Speaks like a pub landlord sharing gossip — animated, humorous, down-to-earth. Occasional belly laugh.",
     personality: "You are a tavern keeper narrator — warm, unpretentious, full of local colour. You tell the story like you're sharing a good tale over a drink. You know the people and the place, you have opinions, and you genuinely root for the heroes without being sentimental about it." },
-  { id: "custom", name: "Custom Narrator", icon: "✏️", desc: "Design your own narrator personality and voice.", voiceDesc: "", personality: "" },
+  { id: "custom", name: "Custom Narrator", icon: "✏️", desc: "Design your own narrator personality.", personality: "" },
 ];
 
 const MAX_SAVE_SLOTS = 5;
 
-const TTS_CONFIG = {
-  model_id: "eleven_flash_v2_5",
-  voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.5, use_speaker_boost: true },
-};
+const KOKORO_VOICES = [
+  { id: "am_adam",     name: "Adam",     desc: "American male, warm" },
+  { id: "am_michael",  name: "Michael",  desc: "American male, deep" },
+  { id: "bf_emma",     name: "Emma",     desc: "British female, clear" },
+  { id: "bm_george",   name: "George",   desc: "British male, classic" },
+  { id: "bm_daniel",   name: "Daniel",   desc: "British male, smooth" },
+  { id: "af_heart",    name: "Heart",    desc: "American female, expressive" },
+  { id: "am_fenrir",   name: "Fenrir",   desc: "American male, gravelly" },
+  { id: "bf_isabella",  name: "Isabella", desc: "British female, warm" },
+];
+
+const KOKORO_MODELS = [
+  { id: "q8_wasm",     name: "Standard (recommended)", desc: "~80MB, works everywhere, good quality", dtype: "q8", device: "wasm" },
+  { id: "fp16_webgpu", name: "High Quality (WebGPU)",  desc: "~150MB, faster but requires WebGPU",   dtype: "fp16", device: "webgpu" },
+  { id: "q4_wasm",     name: "Light (fast download)",   desc: "~40MB, slightly lower quality",        dtype: "q4", device: "wasm" },
+];
+
+const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 // ─── Dice Engine ─────────────────────────────────────────────────────────────
 
@@ -196,6 +208,34 @@ const speakText = (text, voiceEnabled, rate = 0.85, pitch = 0.6, onEnd) => {
   }
 };
 
+const buildWavBlob = (audioData, sampleRate) => {
+  const numSamples = audioData.length;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * (bitsPerSample / 8);
+  const dataSize = numSamples * (bitsPerSample / 8);
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, bitsPerSample / 8, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, audioData[i]));
+    view.setInt16(44 + i * 2, Math.round(s * 32767), true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+};
+
 // ─── Colors ──────────────────────────────────────────────────────────────────
 
 const C = {
@@ -230,22 +270,20 @@ function RPGGameMaster() {
   const [diceAnimation, setDiceAnimation] = useState(false);
   const [selectedNarrator, setSelectedNarrator] = useState("grizzled_veteran");
   const [customNarratorPersonality, setCustomNarratorPersonality] = useState("");
-  const [customNarratorVoice, setCustomNarratorVoice] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [interimText, setInterimText] = useState("");
-  const [elevenLabsKey, setElevenLabsKey] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
-  const [elevenLabsVoices, setElevenLabsVoices] = useState([]);
-  const [selectedVoiceId, setSelectedVoiceId] = useState("");
+  const [kokoroVoice, setKokoroVoice] = useState("am_adam");
+  const [kokoroModelId, setKokoroModelId] = useState("q8_wasm");
+  const [kokoroLoading, setKokoroLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [voiceLoading, setVoiceLoading] = useState(false);
   const recognitionRef = useRef(null);
   const storyEndRef = useRef(null);
   const audioRef = useRef(null);
   const ttsAbortRef = useRef(null);
-  const sfxTimersRef = useRef([]);
+  const kokoroRef = useRef(null);
 
   // ─── Persistence ─────────────────────────────────────────────────────────
 
@@ -307,54 +345,50 @@ function RPGGameMaster() {
   useEffect(() => { storyEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [storyLog]);
   useEffect(() => { window.speechSynthesis?.getVoices(); }, []);
 
-  // ─── ElevenLabs Setup ────────────────────────────────────────────────────
+  // ─── Kokoro TTS Setup ─────────────────────────────────────────────────────
 
   useEffect(() => {
     (async () => {
       try {
         const akResult = await _store.get("rpg-anthropic-key");
         if (akResult?.value) { setAnthropicKey(akResult.value); }
-        const keyResult = await _store.get("rpg-elevenlabs-key");
-        if (keyResult?.value) { setElevenLabsKey(keyResult.value); }
-        const voiceResult = await _store.get("rpg-elevenlabs-voice");
-        if (voiceResult?.value) { setSelectedVoiceId(voiceResult.value); }
+        const voiceResult = await _store.get("rpg-kokoro-voice");
+        if (voiceResult?.value) { setKokoroVoice(voiceResult.value); }
+        const modelResult = await _store.get("rpg-kokoro-model");
+        if (modelResult?.value) { setKokoroModelId(modelResult.value); }
       } catch (e) {}
     })();
   }, []);
 
-  const fetchElevenLabsVoices = useCallback(async (apiKey) => {
-    if (!apiKey) return;
-    try {
-      const resp = await fetch("https://api.elevenlabs.io/v1/voices", {
-        headers: { "xi-api-key": apiKey },
-      });
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => "");
-        console.error("ElevenLabs error:", resp.status, errText);
-        setSaveMsg(`❌ ElevenLabs error ${resp.status}: ${resp.status === 401 ? "Invalid API key" : resp.status === 403 ? "Key not authorized" : errText.slice(0, 80) || "Unknown error"}`);
-        setTimeout(() => setSaveMsg(""), 5000);
-        return [];
-      }
-      const data = await resp.json();
-      const voices = (data.voices || []).map((v) => ({ id: v.voice_id, name: v.name, category: v.category, labels: v.labels }));
-      setElevenLabsVoices(voices);
-      return voices;
-    } catch (e) {
-      console.error("ElevenLabs fetch error:", e);
-      setSaveMsg(`❌ Network error: ${e.message || "Cannot reach ElevenLabs API"}`);
-      setTimeout(() => setSaveMsg(""), 5000);
-      return [];
+  const loadKokoro = useCallback(async () => {
+    if (kokoroRef.current) return kokoroRef.current;
+    if (!window.KokoroTTS) {
+      setSaveMsg("Voice engine not loaded yet. Try again in a moment.");
+      setTimeout(() => setSaveMsg(""), 3000);
+      return null;
     }
-  }, []);
-
-  const saveElevenLabsSettings = useCallback(async (key, voiceId) => {
+    setKokoroLoading(true);
+    setSaveMsg("Loading voice model...");
     try {
-      await _store.set("rpg-elevenlabs-key", key);
-      await _store.set("rpg-elevenlabs-voice", voiceId);
-    } catch (e) {}
-  }, []);
+      const preset = KOKORO_MODELS.find((m) => m.id === kokoroModelId) || KOKORO_MODELS[0];
+      const tts = await window.KokoroTTS.from_pretrained(KOKORO_MODEL_ID, {
+        dtype: preset.dtype,
+        device: preset.device,
+      });
+      kokoroRef.current = tts;
+      setKokoroLoading(false);
+      setSaveMsg("");
+      return tts;
+    } catch (e) {
+      console.error("Kokoro TTS load error:", e);
+      setKokoroLoading(false);
+      setSaveMsg("Voice model failed to load. Using browser TTS fallback.");
+      setTimeout(() => setSaveMsg(""), 4000);
+      return null;
+    }
+  }, [kokoroModelId]);
 
-  // ─── ElevenLabs TTS ──────────────────────────────────────────────────────
+  // ─── Kokoro TTS ───────────────────────────────────────────────────────────
 
   const speakNarration = useCallback(async (text, onEnd) => {
     if (!voiceEnabled) return;
@@ -363,92 +397,42 @@ function RPGGameMaster() {
       .replace(/[*_\[\]]/g, "").trim();
     if (!clean) { onEnd?.(); return; }
 
-    // Stop any current playback and cancel any in-flight fetch
+    // Stop any current playback
     if (ttsAbortRef.current) { ttsAbortRef.current.abort(); ttsAbortRef.current = null; }
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     window.speechSynthesis?.cancel();
 
-    if (elevenLabsKey && selectedVoiceId) {
-      // ElevenLabs TTS
-      setIsSpeaking(true);
+    setIsSpeaking(true);
+    try {
+      const tts = await loadKokoro();
+      if (!tts) {
+        // Fallback to browser TTS
+        speakText(clean, true, 0.85, 0.6, () => { setIsSpeaking(false); onEnd?.(); });
+        return;
+      }
+      // AbortController for post-generation cancellation only — WASM generation cannot be interrupted
       const abortCtrl = new AbortController();
       ttsAbortRef.current = abortCtrl;
-      try {
-        const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`, {
-          method: "POST",
-          headers: { "xi-api-key": elevenLabsKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ text: clean, ...TTS_CONFIG }),
-          signal: abortCtrl.signal,
-        });
-        if (!resp.ok) throw new Error("TTS failed");
-        // If aborted while waiting for the blob, bail out silently
-        if (abortCtrl.signal.aborted) return;
-        const blob = await resp.blob();
-        if (abortCtrl.signal.aborted) return;
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        ttsAbortRef.current = null;
-        audio.onended = () => { URL.revokeObjectURL(url); audioRef.current = null; setIsSpeaking(false); onEnd?.(); };
-        audio.onerror = () => { URL.revokeObjectURL(url); audioRef.current = null; setIsSpeaking(false); onEnd?.(); };
-        audio.play();
-      } catch (e) {
-        ttsAbortRef.current = null;
-        if (e.name === "AbortError") return; // Intentionally cancelled — do nothing
-        console.error("ElevenLabs TTS error:", e);
-        setIsSpeaking(false);
-        // Fallback to browser TTS
-        speakText(text, true, 0.85, 0.6, () => { setIsSpeaking(false); onEnd?.(); });
-      }
-    } else {
-      // Browser TTS fallback
-      setIsSpeaking(true);
-      speakText(text, true, 0.85, 0.6, () => { setIsSpeaking(false); onEnd?.(); });
+
+      const result = await tts.generate(clean, { voice: kokoroVoice, speed: 1.0 });
+      if (abortCtrl.signal.aborted) { setIsSpeaking(false); return; }
+
+      const wavBlob = buildWavBlob(result.audio, result.sampling_rate);
+      const url = URL.createObjectURL(wavBlob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      ttsAbortRef.current = null;
+      audio.onended = () => { URL.revokeObjectURL(url); audioRef.current = null; setIsSpeaking(false); onEnd?.(); };
+      audio.onerror = () => { URL.revokeObjectURL(url); audioRef.current = null; setIsSpeaking(false); onEnd?.(); };
+      audio.play();
+    } catch (e) {
+      ttsAbortRef.current = null;
+      if (e.name === "AbortError") return;
+      console.error("Kokoro TTS error:", e);
+      setIsSpeaking(false);
+      speakText(clean, true, 0.85, 0.6, () => { setIsSpeaking(false); onEnd?.(); });
     }
-  }, [voiceEnabled, elevenLabsKey, selectedVoiceId]);
-
-
-
-  // ─── SFX Scheduling ──────────────────────────────────────────────────────
-
-  // Schedule SFX at proportional offsets through the narration.
-  // sfxList: [{desc, charOffset}], totalChars: length of clean narration text
-  const scheduleSfx = useCallback((sfxList, totalChars) => {
-    // Clear any previously scheduled SFX
-    sfxTimersRef.current.forEach(clearTimeout);
-    sfxTimersRef.current = [];
-    if (!sfxList.length) return;
-    // Estimate speech rate: ~13 chars/second (approx 150wpm average)
-    const CHARS_PER_SEC = 13;
-    const BASE_DELAY_MS = 600; // startup latency buffer
-    sfxList.forEach(({ desc, charOffset }) => {
-      const fraction = totalChars > 0 ? charOffset / totalChars : 0;
-      const delaySec = (fraction * (totalChars / CHARS_PER_SEC));
-      const delayMs = BASE_DELAY_MS + Math.round(delaySec * 1000);
-      const t = setTimeout(() => playSoundEffect(desc), delayMs);
-      sfxTimersRef.current.push(t);
-    });
-  }, [playSoundEffect]);
-
-  // ─── ElevenLabs Sound Effects ───────────────────────────────────────────
-
-  const playSoundEffect = useCallback(async (description) => {
-    if (!elevenLabsKey) return;
-    try {
-      const resp = await fetch("https://api.elevenlabs.io/v1/sound-generation", {
-        method: "POST",
-        headers: { "xi-api-key": elevenLabsKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ text: description, duration_seconds: 3 }),
-      });
-      if (!resp.ok) return;
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const sfxAudio = new Audio(url);
-      sfxAudio.volume = 0.5;
-      sfxAudio.onended = () => URL.revokeObjectURL(url);
-      sfxAudio.play();
-    } catch (e) { console.log("SFX error:", e); }
-  }, [elevenLabsKey]);
+  }, [voiceEnabled, kokoroVoice, loadKokoro]);
 
   // ─── Voice Input ─────────────────────────────────────────────────────────
 
@@ -495,7 +479,7 @@ function RPGGameMaster() {
     setIsListening(false);
     setInterimText("");
   }, []);
-  const stopSpeaking = useCallback(() => { sfxTimersRef.current.forEach(clearTimeout); sfxTimersRef.current = []; if (ttsAbortRef.current) { ttsAbortRef.current.abort(); ttsAbortRef.current = null; } window.speechSynthesis?.cancel(); if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } setIsSpeaking(false); }, []);
+  const stopSpeaking = useCallback(() => { if (ttsAbortRef.current) { ttsAbortRef.current.abort(); ttsAbortRef.current = null; } window.speechSynthesis?.cancel(); if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } setIsSpeaking(false); }, []);
 
   // ─── AI Narrator ─────────────────────────────────────────────────────────
 
@@ -657,12 +641,11 @@ GAME RULES:
     logUpdater(cleanResponse);
 
     // --- Schedule SFX timed to narration playback ---
-    scheduleSfx(sfxList, cleanResponse.length);
     speakNarration(cleanResponse);
 
     // Return resolved next-turn index (-1 = not specified by narrator)
     return turnIdx;
-  }, [characters, setCharacters, scheduleSfx, speakNarration]);
+  }, [characters, setCharacters, speakNarration]);
 
   const startAdventure = async (chars) => {
     setIsNarrating(true);
@@ -729,63 +712,51 @@ GAME RULES:
       <button onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ ...st.voiceToggle, background: voiceEnabled ? C.rust + "50" : "transparent", borderColor: voiceEnabled ? C.gold : C.border }}>
         {voiceEnabled ? "🔊" : "🔇"} Voice {voiceEnabled ? "ON" : "OFF"}
       </button>
-      <button onClick={() => { if (elevenLabsKey) fetchElevenLabsVoices(elevenLabsKey); setShowSettings(true); }} style={{ ...st.voiceToggle, borderColor: anthropicKey ? C.green : C.red }}>
+      <button onClick={() => setShowSettings(true)} style={{ ...st.voiceToggle, borderColor: anthropicKey ? C.green : C.red }}>
         {anthropicKey ? "⚙️ Settings" : "⚠️ Setup Required"}
       </button>
       {isSpeaking && <button onClick={stopSpeaking} style={{ ...st.voiceToggle, borderColor: C.red, color: C.red }}>⏹️ Stop</button>}
+      {kokoroLoading && <span style={{ fontFamily: "'Crimson Text', serif", fontSize: 12, color: C.textDim, alignSelf: "center" }}>Loading voice model...</span>}
     </div>
   );
 
   const SettingsModal = () => {
-    const [tempKey, setTempKey] = useState(elevenLabsKey);
     const [tempAnthropicKey, setTempAnthropicKey] = useState(anthropicKey);
     const [testingApi, setTestingApi] = useState(false);
     const [apiTestResult, setApiTestResult] = useState("");
     const [testingVoice, setTestingVoice] = useState(false);
 
-    const handleSaveKey = async () => {
-      const cleanKey = tempKey.trim();
-      if (!cleanKey) return;
-      setVoiceLoading(true);
-      setTempKey(cleanKey);
-      setElevenLabsKey(cleanKey);
-      const voices = await fetchElevenLabsVoices(cleanKey);
-      setVoiceLoading(false);
-      if (voices && voices.length > 0) {
-        await saveElevenLabsSettings(cleanKey, selectedVoiceId || voices[0].id);
-        if (!selectedVoiceId) setSelectedVoiceId(voices[0].id);
-        setSaveMsg("✅ API key saved & voices loaded!"); setTimeout(() => setSaveMsg(""), 2500);
-      }
-    };
-
-    const handleSelectVoice = async (voiceId) => {
-      setSelectedVoiceId(voiceId);
-      await saveElevenLabsSettings(tempKey || elevenLabsKey, voiceId);
-    };
-
     const handleTestVoice = async (voiceId) => {
-      if (!elevenLabsKey || testingVoice) return;
+      if (testingVoice) return;
       setTestingVoice(true);
       try {
-        const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-          method: "POST",
-          headers: { "xi-api-key": elevenLabsKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ text: "Greetings, brave adventurer. I am your narrator, and your fate rests in my hands tonight.", ...TTS_CONFIG }),
-        });
-        if (!resp.ok) { const errText = await resp.text().catch(() => ""); let msg = errText; try { msg = JSON.parse(errText)?.detail?.message || errText; } catch(ex) {} throw new Error(msg || `HTTP ${resp.status}`); }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
+        const tts = await loadKokoro();
+        if (!tts) { setTestingVoice(false); return; }
+        const result = await tts.generate("Greetings, brave adventurer. I am your narrator, and your fate rests in my hands tonight.", { voice: voiceId, speed: 1.0 });
+        const wavBlob = buildWavBlob(result.audio, result.sampling_rate);
+        const url = URL.createObjectURL(wavBlob);
         const audio = new Audio(url);
         audio.onended = () => { URL.revokeObjectURL(url); setTestingVoice(false); };
         audio.onerror = () => { URL.revokeObjectURL(url); setTestingVoice(false); };
         audio.play();
-      } catch (e) { console.error("Voice test error:", e); setTestingVoice(false); setSaveMsg(`❌ ${e.message || "Voice test failed"}`); setTimeout(() => setSaveMsg(""), 4000); }
+      } catch (e) { console.error("Voice test error:", e); setTestingVoice(false); setSaveMsg("Voice test failed: " + (e.message || "Unknown error")); setTimeout(() => setSaveMsg(""), 4000); }
+    };
+
+    const handleSelectVoice = async (voiceId) => {
+      setKokoroVoice(voiceId);
+      try { await _store.set("rpg-kokoro-voice", voiceId); } catch (e) {}
+    };
+
+    const handleSelectModel = async (modelId) => {
+      setKokoroModelId(modelId);
+      kokoroRef.current = null;
+      try { await _store.set("rpg-kokoro-model", modelId); } catch (e) {}
     };
 
     return (
       <div style={st.modal} onClick={() => setShowSettings(false)}>
         <div style={st.modalContent} onClick={(e) => e.stopPropagation()}>
-          <h2 style={st.modalTitle}>⚙️ Settings</h2>
+          <h2 style={st.modalTitle}>Settings</h2>
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>Anthropic API Key <span style={{ fontSize: 11, color: C.red }}>(required)</span></label>
             <div style={{ display: "flex", gap: 8 }}>
@@ -817,51 +788,44 @@ GAME RULES:
             <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>Get key at <span style={{ color: C.amber }}>console.anthropic.com</span>. Enable "direct browser access" when creating the key.</div>
           </div>
 
-
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>ElevenLabs API Key</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input type="text" value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Paste your ElevenLabs API key here..." style={{ ...st.textInput, flex: 1, fontSize: 13, fontFamily: "monospace" }} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
-              <button onClick={handleSaveKey} disabled={!tempKey.trim() || voiceLoading} style={{ ...st.slotBtn, borderColor: C.gold, color: C.gold, padding: "8px 16px", opacity: tempKey.trim() && !voiceLoading ? 1 : 0.4 }}>
-                {voiceLoading ? "..." : "Save"}
-              </button>
+            <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>Narrator Voice</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
+              {KOKORO_VOICES.map((v) => (
+                <div key={v.id} style={{ ...st.saveSlotRow, borderColor: v.id === kokoroVoice ? C.gold : C.border, background: v.id === kokoroVoice ? C.rust + "20" : C.bg }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Cinzel', serif", fontSize: 13, color: v.id === kokoroVoice ? C.gold : C.text }}>{v.name}</div>
+                    <div style={{ fontSize: 11, color: C.textDim }}>{v.desc}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => handleTestVoice(v.id)} disabled={testingVoice || kokoroLoading} style={{ ...st.slotBtn, fontSize: 12, opacity: testingVoice || kokoroLoading ? 0.4 : 1 }}>
+                      {testingVoice ? "..." : kokoroLoading ? "Loading..." : "Test"}
+                    </button>
+                    <button onClick={() => handleSelectVoice(v.id)} style={{ ...st.slotBtn, borderColor: v.id === kokoroVoice ? C.gold : C.green, color: v.id === kokoroVoice ? C.gold : C.green, fontSize: 12 }}>
+                      {v.id === kokoroVoice ? "Selected" : "Select"}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
             <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>
-              Get your key at <span style={{ color: C.amber }}>elevenlabs.io → Profile → API Keys</span>.
-              {tempKey.trim() && <span style={{ marginLeft: 8, color: tempKey.trim().length > 20 ? C.green : C.red }}>Key length: {tempKey.trim().length} chars</span>}
+              Voice runs locally in your browser via Kokoro TTS (~80MB download on first use, cached after).
             </div>
           </div>
 
-          {elevenLabsVoices.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>Narrator Voice</label>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
-                {elevenLabsVoices.map((v) => (
-                  <div key={v.id} style={{ ...st.saveSlotRow, borderColor: v.id === selectedVoiceId ? C.gold : C.border, background: v.id === selectedVoiceId ? C.rust + "20" : C.bg }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: "'Cinzel', serif", fontSize: 13, color: v.id === selectedVoiceId ? C.gold : C.text }}>{v.name}</div>
-                      <div style={{ fontSize: 11, color: C.textDim }}>{v.labels?.accent || v.category || ""} {v.labels?.gender || ""} {v.labels?.age || ""}</div>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                      <button onClick={() => handleTestVoice(v.id)} disabled={testingVoice} style={{ ...st.slotBtn, fontSize: 12, opacity: testingVoice ? 0.4 : 1 }}>
-                        {testingVoice ? "..." : "🔊 Test"}
-                      </button>
-                      <button onClick={() => handleSelectVoice(v.id)} style={{ ...st.slotBtn, borderColor: v.id === selectedVoiceId ? C.gold : C.green, color: v.id === selectedVoiceId ? C.gold : C.green, fontSize: 12 }}>
-                        {v.id === selectedVoiceId ? "✅" : "Select"}
-                      </button>
-                    </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontFamily: "'Cinzel', serif", fontSize: 14, color: C.amber, marginBottom: 8 }}>TTS Model</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {KOKORO_MODELS.map((m) => (
+                <button key={m.id} onClick={() => handleSelectModel(m.id)} style={{ ...st.saveSlotRow, borderColor: m.id === kokoroModelId ? C.gold : C.border, background: m.id === kokoroModelId ? C.rust + "20" : C.bg, cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: "'Cinzel', serif", fontSize: 13, color: m.id === kokoroModelId ? C.gold : C.text }}>{m.name} {m.id === kokoroModelId ? "Selected" : ""}</div>
+                    <div style={{ fontSize: 11, color: C.textDim }}>{m.desc}</div>
                   </div>
-                ))}
-              </div>
+                </button>
+              ))}
             </div>
-          )}
-
-          {!elevenLabsKey && (
-            <div style={{ padding: 14, background: C.bg, borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 16 }}>
-              <div style={{ fontFamily: "'Cinzel', serif", fontSize: 13, color: C.textDim, marginBottom: 4 }}>Without ElevenLabs</div>
-              <div style={{ fontSize: 13, color: C.text }}>Voice will fall back to your browser's built-in TTS, which may not work in all app webviews. ElevenLabs works everywhere and sounds dramatically better.</div>
-            </div>
-          )}
+          </div>
 
           <button onClick={() => setShowSettings(false)} style={st.closeModalBtn}>Close</button>
         </div>
@@ -976,7 +940,6 @@ GAME RULES:
         {selectedNarrator === "custom" && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             <textarea value={customNarratorPersonality} onChange={(e) => setCustomNarratorPersonality(e.target.value)} placeholder="Describe your narrator's personality, speech patterns, and style... (e.g., 'A sarcastic AI who narrates like a nature documentary')" style={{ ...st.textInput, minHeight: 80, resize: "vertical" }} />
-            <textarea value={customNarratorVoice} onChange={(e) => setCustomNarratorVoice(e.target.value)} placeholder="Describe the voice for ElevenLabs (e.g., 'Warm female voice with a slight Irish accent, playful and quick-witted')" style={{ ...st.textInput, minHeight: 60, resize: "vertical" }} />
           </div>
         )}
       </section>
@@ -1104,7 +1067,7 @@ GAME RULES:
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
             <button onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ ...st.topBtn, background: voiceEnabled ? C.rust + "40" : "transparent", borderColor: voiceEnabled ? C.gold : C.border }} title="Toggle narrator voice">{voiceEnabled ? "🔊" : "🔇"}</button>
             {isSpeaking && <button onClick={stopSpeaking} style={{ ...st.topBtn, borderColor: C.red }} title="Stop narration">⏹️</button>}
-            <button onClick={() => { if (elevenLabsKey) fetchElevenLabsVoices(elevenLabsKey); setShowSettings(true); }} title="Settings" style={{ ...st.topBtn, borderColor: anthropicKey ? C.green : C.red }}>⚙️</button>
+            <button onClick={() => setShowSettings(true)} title="Settings" style={{ ...st.topBtn, borderColor: anthropicKey ? C.green : C.red }}>⚙️</button>
             <button onClick={() => setShowCharSheet(!showCharSheet)} style={st.topBtn} title="Character sheets">📋</button>
             <button onClick={() => setShowInventory(!showInventory)} style={st.topBtn} title="Inventory">🎒</button>
             <button onClick={() => { refreshSlots(); setShowSaveLoad(true); }} style={st.topBtn} title="Save/Load">💾</button>

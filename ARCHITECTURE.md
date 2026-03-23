@@ -24,7 +24,7 @@ If a `rpg-game-master.jsx` artifact exists elsewhere, it is **stale and behind**
 
 - **Constants** (~line 39): `SCENARIOS`, `CLASSES`, `RACES`, `STARTER_ITEMS`, `SKILL_TREES`, `NARRATOR_TYPES` — game content data
 - **Dice Engine** (~line 137): `rollDie`, `rollDice`, `rollStat` — 4d6-drop-lowest stat generation
-- **Voice Engine** (~line 146): Browser SpeechRecognition + SpeechSynthesis, ElevenLabs TTS/SFX integration
+- **Voice Engine** (~line 146): Browser SpeechRecognition + SpeechSynthesis, Kokoro TTS (in-browser via WASM/WebGPU)
 - **Main App** (~line 203): All state, persistence (localStorage via `_store`), API calls, game logic, and rendering
 - **AI Narrator** (~line 499): System prompt construction (`narratorPrompt`) and Anthropic API call (`callNarrator`)
 - **Styles** (~line 1286): All inline style definitions in the `st` object
@@ -66,9 +66,9 @@ loading -> setup -> character -> playing
 - `activeChar` — index into characters[]
 - `storyLog` — array of `{ type: "narrator"|"player"|"roll", text: string, character?: string }`
 
-**Voice/TTS**: `voiceEnabled`, `isListening`, `isSpeaking`, `interimText`, `elevenLabsKey`, `selectedVoiceId`, `elevenLabsVoices[]`, `voiceLoading`
+**Voice/TTS**: `voiceEnabled`, `isListening`, `isSpeaking`, `interimText`, `kokoroVoice`, `kokoroModelId`, `kokoroLoading`
 
-**Refs**: `recognitionRef` (SpeechRecognition), `storyEndRef` (scroll anchor), `audioRef` (current TTS audio), `ttsAbortRef` (AbortController for in-flight TTS), `sfxTimersRef` (scheduled SFX timer IDs)
+**Refs**: `recognitionRef` (SpeechRecognition), `storyEndRef` (scroll anchor), `audioRef` (current TTS audio), `ttsAbortRef` (AbortController for in-flight TTS), `kokoroRef` (loaded KokoroTTS instance)
 
 ### Character Object Schema
 ```js
@@ -93,8 +93,8 @@ loading -> setup -> character -> playing
 | `rpg-autosave` | Full game state JSON |
 | `rpg-save-slot-1` ... `rpg-save-slot-5` | Manual save state JSON + metadata |
 | `rpg-anthropic-key` | Anthropic API key string |
-| `rpg-elevenlabs-key` | ElevenLabs API key string |
-| `rpg-elevenlabs-voice` | Selected ElevenLabs voice ID string |
+| `rpg-kokoro-voice` | Selected Kokoro voice ID string (default: "am_adam") |
+| `rpg-kokoro-model` | Selected Kokoro model preset ID (default: "q8_wasm") |
 
 ---
 
@@ -129,7 +129,7 @@ Add to `NARRATOR_TYPES[]`:
 ```js
 { id: "unique_id", name: "Display Name", icon: "X",
   desc: "Short description for the selection card.",
-  voiceDesc: "Voice description for ElevenLabs. Describe accent, tone, speed, gender, character.",
+  // voiceDesc removed — voice selection is now done via Kokoro voice picker in Settings
   personality: "System prompt personality. See narrator rules in AGENTS.md." }
 ```
 
@@ -148,7 +148,7 @@ Assembled from: narrator personality, scenario setting, strictness parameters, f
 ### Response Tag Parsing (`processNarratorResponse()`)
 
 Centralized function that handles ALL narrator responses (both opening narration and player turns):
-1. `[SFX: description]` — extracted with character offsets, scheduled via `scheduleSfx()` for timed playback
+1. `[SFX: description]` — extracted and stripped (no audio playback; SFX generation was removed with ElevenLabs)
 2. `[INVENTORY: Name +item]` / `[INVENTORY: Name -item]` — mutates character inventory
 3. `[HP: Name +/-N]` — mutates character HP (clamped to 0..maxHp)
 4. `[TURN: CharName]` — parsed for multiplayer turn advancement
@@ -167,16 +167,16 @@ Centralized function that handles ALL narrator responses (both opening narration
 ### TTS Pipeline (`speakNarration()`)
 ```
 Text -> Strip tags ([SFX:], [TURN:], [ROLL:], [INVENTORY:], [HP:])
-     -> ElevenLabs configured?
-        YES -> POST /v1/text-to-speech/{voiceId} (with AbortController)
-               -> Audio blob -> <audio>.play()
-        NO  -> Browser SpeechSynthesis fallback (rate 0.85, pitch 0.6)
+     -> loadKokoro() (lazy-loads model on first call, ~80MB one-time download)
+        -> Kokoro loaded?
+           YES -> tts.generate(text, {voice, speed})
+                  -> buildWavBlob(audio, sampling_rate) -> ObjectURL -> <audio>.play()
+           NO  -> Browser SpeechSynthesis fallback (rate 0.85, pitch 0.6)
 ```
 
-ElevenLabs: All TTS calls use the shared `TTS_CONFIG` constant — `eleven_multilingual_v2`, stability 0.5, similarity 0.75, style 0.35, speaker boost on.
+Kokoro TTS (kokoro-js) runs 100% in-browser via WASM/WebGPU. No API key required. Model is loaded from jsdelivr CDN via a `<script type="module">` tag that exposes `window.KokoroTTS`. The ONNX model (~80MB for q8) is downloaded lazily on first narration and cached by Transformers.js in IndexedDB.
 
-### SFX Scheduling (`scheduleSfx()`)
-Sound effects fire at proportional time offsets during narration (~13 chars/sec speech rate estimate, 600ms startup buffer). Timers tracked in `sfxTimersRef` and cleared on stop.
+User-selectable model presets: `q8_wasm` (default, ~80MB), `fp16_webgpu` (~150MB, requires WebGPU), `q4_wasm` (~40MB, lower quality). Curated voice list of 8 voices.
 
 ### Voice Input (Web Speech API)
 Continuous mode with auto-restart on browser timeout (~60s). `no-speech` errors ignored. Ref cleared before `.stop()` to prevent restart loop.
@@ -193,14 +193,6 @@ Headers: Content-Type, x-api-key, anthropic-version: "2023-06-01",
 Body: { model: "claude-sonnet-4-20250514", max_tokens: 1000, system: string, messages: [...] }
 ```
 The `anthropic-dangerous-direct-browser-access: "true"` header is REQUIRED for browser-to-API calls. Users must enable this flag when creating their API key.
-
-### ElevenLabs APIs
-```
-GET  /v1/voices                          -> { voices: [{ voice_id, name, category, labels }] }
-POST /v1/text-to-speech/{voice_id}       -> audio/mpeg blob
-POST /v1/sound-generation                -> audio/mpeg blob
-Headers: xi-api-key, Content-Type: application/json
-```
 
 ---
 
@@ -223,7 +215,7 @@ Bump `CACHE_NAME` in `sw.js` (e.g., `rrrusty-rpg-v3`). The activate handler auto
 ## Pitfalls & Gotchas
 
 1. **Service worker caching**: Will aggressively serve old `index.html`. Always bump `CACHE_NAME`.
-2. **ElevenLabs in Claude webview**: Won't work. The webview blocks all external fetches except `api.anthropic.com`.
+2. **Kokoro TTS model download**: First use downloads ~80MB (q8) model. Cached in IndexedDB by Transformers.js after first load.
 3. **Anthropic CORS**: The API key must have "direct browser access" enabled. This is a per-key setting at creation time. Without it -> 403.
 4. **Story context window**: Only the last 20 log entries are sent to the API. Older context is lost.
 5. **Character name collisions**: The tag parser uses regex on character names. Names with regex-special characters or substring matches may break parsing.
@@ -234,7 +226,7 @@ Bump `CACHE_NAME` in `sw.js` (e.g., `rrrusty-rpg-v3`). The activate handler auto
 
 ## Deployment
 
-All game logic runs client-side. The server only serves static files. No backend is needed — API calls go directly from the browser to Anthropic/ElevenLabs.
+All game logic runs client-side. The server only serves static files. No backend is needed — API calls go directly from the browser to Anthropic. TTS runs entirely in-browser via Kokoro (WASM/WebGPU).
 
 ### Option A: Self-Host on Raspberry Pi
 
