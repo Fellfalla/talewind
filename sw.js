@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rrrusty-rpg-v2';
+const CACHE_NAME = 'rrrusty-rpg-v3';
 const CACHE_URLS = [
   './',
   './index.html',

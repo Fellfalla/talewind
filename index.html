@@ -134,6 +134,11 @@ const NARRATOR_TYPES = [
 
 const MAX_SAVE_SLOTS = 5;
 
+const TTS_CONFIG = {
+  model_id: "eleven_flash_v2_5",
+  voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.5, use_speaker_boost: true },
+};
+
 // ─── Dice Engine ─────────────────────────────────────────────────────────────
 
 const rollDie = (sides) => Math.floor(Math.random() * sides) + 1;
@@ -372,11 +377,7 @@ function RPGGameMaster() {
         const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`, {
           method: "POST",
           headers: { "xi-api-key": elevenLabsKey, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: clean,
-            model_id: "eleven_multilingual_v2",
-            voice_settings: { stability: 0.35, similarity_boost: 0.8, style: 0.6, use_speaker_boost: true },
-          }),
+          body: JSON.stringify({ text: clean, ...TTS_CONFIG }),
           signal: abortCtrl.signal,
         });
         if (!resp.ok) throw new Error("TTS failed");
@@ -769,16 +770,16 @@ GAME RULES:
         const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
           method: "POST",
           headers: { "xi-api-key": elevenLabsKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ text: (() => { const nt = NARRATOR_TYPES.find(n => n.id === selectedNarrator); return nt?.voiceDesc ? `Speaking as: ${nt.voiceDesc.slice(0, 100)}. Greetings, brave adventurer. Your fate rests in my hands tonight.` : "Greetings, brave adventurer. I am your narrator, and your fate rests in my hands tonight."; })(), model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.35, similarity_boost: 0.8, style: 0.6, use_speaker_boost: true } }),
+          body: JSON.stringify({ text: "Greetings, brave adventurer. I am your narrator, and your fate rests in my hands tonight.", ...TTS_CONFIG }),
         });
-        if (!resp.ok) throw new Error("Test failed");
+        if (!resp.ok) { const errText = await resp.text().catch(() => ""); let msg = errText; try { msg = JSON.parse(errText)?.detail?.message || errText; } catch(ex) {} throw new Error(msg || `HTTP ${resp.status}`); }
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         audio.onended = () => { URL.revokeObjectURL(url); setTestingVoice(false); };
         audio.onerror = () => { URL.revokeObjectURL(url); setTestingVoice(false); };
         audio.play();
-      } catch (e) { setTestingVoice(false); setSaveMsg("❌ Voice test failed"); setTimeout(() => setSaveMsg(""), 2500); }
+      } catch (e) { console.error("Voice test error:", e); setTestingVoice(false); setSaveMsg(`❌ ${e.message || "Voice test failed"}`); setTimeout(() => setSaveMsg(""), 4000); }
     };
 
     return (
