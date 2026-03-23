@@ -1,7 +1,8 @@
-const CACHE_NAME = 'rrrusty-rpg-v7';
+const CACHE_NAME = 'rrrusty-rpg-v8';
 const CACHE_URLS = [
   './',
   './index.html',
+  './tts-worker.js',
   './manifest.json',
   'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap'
 ];

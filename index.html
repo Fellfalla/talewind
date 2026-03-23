@@ -218,6 +218,141 @@ const splitTextIntoChunks = (text, maxLen = 250) => {
   return chunks;
 };
 
+// ─── TTS Worker Pool ────────────────────────────────────────────────────────
+//
+// Dynamic pool of Web Workers running Kokoro ONNX inference off the main thread.
+// Pool size adapts to available CPU cores and memory (1-3 workers).
+// Each worker loads its own model copy (~80-150MB, cached in IndexedDB after first load).
+// dispatch(text, voice, speed) → Promise<Blob>  — pool manages concurrency internally.
+
+const createTTSWorkerPool = () => {
+  const cores = navigator.hardwareConcurrency || 2;
+  const mem = navigator.deviceMemory || 4; // Chrome-only; default 4GB elsewhere
+  const poolSize = Math.min(3, Math.max(1, Math.min(Math.floor(mem / 2), Math.floor(cores / 2))));
+
+  const workers = new Array(poolSize).fill(null);
+  const workerReady = new Array(poolSize).fill(false);
+  const idle = new Set();
+  const queue = [];          // { reqId, text, voice, speed, resolve, reject }
+  const pending = new Map(); // reqId → { resolve, reject }
+  let reqCounter = 0;
+  let initPromise = null;
+  let currentConfig = null;  // { modelId, dtype, device } — detect model changes
+
+  const drainQueue = () => {
+    while (queue.length > 0 && idle.size > 0) {
+      const wi = idle.values().next().value;
+      idle.delete(wi);
+      const task = queue.shift();
+      pending.set(task.reqId, task);
+      workers[wi].postMessage({
+        type: "generate",
+        reqId: task.reqId,
+        text: task.text,
+        voice: task.voice,
+        speed: task.speed,
+      });
+    }
+  };
+
+  const createWorkers = () => {
+    for (let i = 0; i < poolSize; i++) {
+      if (workers[i]) continue;
+      const w = new Worker("tts-worker.js", { type: "module" });
+      workers[i] = w;
+
+      w.onmessage = (e) => {
+        const msg = e.data;
+
+        // Init complete
+        if (msg.type === "ready") {
+          workerReady[i] = true;
+          idle.add(i);
+          drainQueue();
+          return;
+        }
+
+        // Init failure (no reqId)
+        if (msg.type === "error" && msg.reqId == null) {
+          console.warn(`TTS worker ${i} init failed:`, msg.error);
+          return;
+        }
+
+        // Generation result
+        const task = pending.get(msg.reqId);
+        if (!task) return; // stale or already cancelled
+        pending.delete(msg.reqId);
+        idle.add(i);
+
+        if (msg.type === "chunk") {
+          task.resolve(msg.blob);
+        } else {
+          task.reject(new Error(msg.error || "Worker error"));
+        }
+        drainQueue();
+      };
+
+      w.onerror = (e) => console.error(`TTS worker ${i} error:`, e);
+    }
+  };
+
+  return {
+    poolSize,
+
+    init: (config) => {
+      // Re-init if model config changed
+      const configKey = config.modelId + "|" + config.dtype + "|" + config.device;
+      if (initPromise && currentConfig === configKey) return initPromise;
+      currentConfig = configKey;
+
+      createWorkers();
+      const readyPromises = workers.map((w, i) => {
+        if (workerReady[i]) return Promise.resolve();
+        return new Promise((resolve) => {
+          const onMsg = (e) => {
+            if (e.data.type === "ready" || e.data.type === "error") {
+              w.removeEventListener("message", onMsg);
+              resolve();
+            }
+          };
+          w.addEventListener("message", onMsg);
+          w.postMessage({ type: "init", ...config });
+        });
+      });
+      initPromise = Promise.all(readyPromises);
+      return initPromise;
+    },
+
+    dispatch: (text, voice, speed) => {
+      return new Promise((resolve, reject) => {
+        const id = ++reqCounter;
+        queue.push({ reqId: id, text, voice, speed, resolve, reject });
+        drainQueue();
+      });
+    },
+
+    stop: () => {
+      while (queue.length > 0) queue.shift().reject(new Error("Stopped"));
+      for (const [, task] of pending) task.reject(new Error("Stopped"));
+      pending.clear();
+    },
+
+    destroy: () => {
+      while (queue.length > 0) queue.shift().reject(new Error("Destroyed"));
+      for (const [, task] of pending) task.reject(new Error("Destroyed"));
+      pending.clear();
+      for (let i = 0; i < poolSize; i++) {
+        if (workers[i]) workers[i].terminate();
+        workers[i] = null;
+        workerReady[i] = false;
+      }
+      idle.clear();
+      initPromise = null;
+      currentConfig = null;
+    },
+  };
+};
+
 // ─── TTS Providers ───────────────────────────────────────────────────────────
 //
 // Each provider implements: init(), generate(text, opts) -> { stop() },
@@ -227,32 +362,31 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
   let currentAudioCtx = null;
   let stopped = false;
   let genId = 0; // Distinguishes stale generation runs after stop+restart
+  let pool = null;
+  let poolFailed = false;
 
-  const loadInstance = async (modelId) => {
-    if (kokoroRef.current) return kokoroRef.current;
-    if (!window.KokoroTTS) {
-      setSaveMsg("Voice engine not loaded yet. Try again in a moment.");
-      setTimeout(() => setSaveMsg(""), 3000);
-      return null;
-    }
-    setKokoroLoading(true);
-    setSaveMsg("Loading voice model...");
+  let poolInitialized = false;
+
+  const ensurePool = async (modelId) => {
+    if (poolFailed) return false;
+    if (pool && poolInitialized) return true;
+    const preset = KOKORO_MODELS.find((m) => m.id === modelId) || KOKORO_MODELS[0];
     try {
-      const preset = KOKORO_MODELS.find((m) => m.id === modelId) || KOKORO_MODELS[0];
-      const tts = await window.KokoroTTS.from_pretrained(KOKORO_MODEL_ID, {
-        dtype: preset.dtype,
-        device: preset.device,
-      });
-      kokoroRef.current = tts;
+      if (!pool) pool = createTTSWorkerPool();
+      setKokoroLoading(true);
+      setSaveMsg("Loading voice model...");
+      await pool.init({ modelId: KOKORO_MODEL_ID, dtype: preset.dtype, device: preset.device });
+      poolInitialized = true;
       setKokoroLoading(false);
       setSaveMsg("");
-      return tts;
+      return true;
     } catch (e) {
-      console.error("Kokoro TTS load error:", e);
+      console.error("TTS worker pool init failed:", e);
+      poolFailed = true;
       setKokoroLoading(false);
       setSaveMsg("Voice model failed to load. Using browser TTS fallback.");
       setTimeout(() => setSaveMsg(""), 4000);
-      return null;
+      return false;
     }
   };
 
@@ -277,13 +411,13 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
   return {
     getName: () => "kokoro",
 
-    isReady: () => !!kokoroRef.current || !!window.KokoroTTS,
+    isReady: () => (pool && !poolFailed) || !!window.KokoroTTS,
 
-    init: async (modelId) => loadInstance(modelId),
+    init: async (modelId) => ensurePool(modelId),
 
     generate: async (text, { voice, speed, modelId, onEnd, onGenerating, onPlaying }) => {
-      const tts = await loadInstance(modelId);
-      if (!tts) return null; // signal caller to try fallback
+      const ready = await ensurePool(modelId);
+      if (!ready) return null; // signal caller to try browser TTS fallback
 
       stopped = false;
       const myGen = ++genId;
@@ -292,8 +426,7 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
       const chunks = splitTextIntoChunks(text);
       if (chunks.length === 0) { onEnd?.(); return; }
 
-      // AudioContext schedules buffers on the audio thread, which runs
-      // independently of main-thread WASM work — no gaps between chunks.
+      // AudioContext schedules buffers on the audio thread — gapless playback
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       currentAudioCtx = audioCtx;
       if (audioCtx.state === "suspended") await audioCtx.resume();
@@ -318,27 +451,34 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
         return new Promise((r) => { wakeConsumer = r; });
       };
 
-      // --- Producer: generate all chunks greedily, yielding between WASM calls ---
+      // --- Producer: dispatch chunks to worker pool in parallel ---
       let notifiedGen = false;
       const produce = async () => {
+        const dispatches = [];
         for (let i = 0; i < chunks.length; i++) {
           if (isStale()) return;
           const key = chunks[i] + "|" + voice;
           const cached = cacheGet(key);
           if (cached) { pushBlob(i, cached); continue; }
           if (!notifiedGen) { notifiedGen = true; onGenerating?.(); }
-          // Yield so the browser can process events and audio between WASM calls
-          await new Promise((r) => setTimeout(r, 0));
-          if (isStale()) return;
-          const result = await tts.generate(chunks[i], { voice, speed: speed || 1.0 });
-          if (isStale()) return;
-          const blob = buildWavBlob(result.audio, result.sampling_rate);
-          cachePut(key, blob);
-          pushBlob(i, blob);
+          const idx = i;
+          dispatches.push(
+            pool.dispatch(chunks[idx], voice, speed || 1.0)
+              .then((blob) => {
+                if (!isStale()) {
+                  cachePut(chunks[idx] + "|" + voice, blob);
+                  pushBlob(idx, blob);
+                }
+              })
+              .catch((e) => {
+                if (e.message !== "Stopped") console.error("TTS chunk error:", e);
+              })
+          );
         }
+        await Promise.all(dispatches);
         markGenDone();
       };
-      produce().catch((e) => { console.error("TTS generation error:", e); markGenDone(); });
+      produce().catch((e) => { console.error("TTS production error:", e); markGenDone(); });
 
       // --- Consumer: decode and schedule blobs on AudioContext for gapless playback ---
       let notifiedPlay = false;
@@ -382,7 +522,6 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
       if (lastSource && !isStale()) {
         await new Promise((resolve) => {
           lastSource.onended = resolve;
-          // Safety fallback — onended may not fire if context is closing
           const t = setInterval(() => {
             if (isStale() || audioCtx.state === "closed") { clearInterval(t); resolve(); }
           }, 250);
@@ -397,21 +536,34 @@ const createKokoroProvider = ({ kokoroRef, setKokoroLoading, setSaveMsg, ttsCach
     stop: () => {
       stopped = true;
       genId++;
+      pool?.stop();
       if (currentAudioCtx) {
         try { currentAudioCtx.close(); } catch (_) {}
         currentAudioCtx = null;
       }
     },
 
-    // Expose for Settings modal voice testing (uses Kokoro directly)
+    // Expose for Settings modal voice testing — routes through worker pool
     generateTestAudio: async (text, { voice, modelId }) => {
-      const tts = await loadInstance(modelId);
-      if (!tts) return null;
-      const result = await tts.generate(text, { voice, speed: 1.0 });
-      const wavBlob = buildWavBlob(result.audio, result.sampling_rate);
-      const url = URL.createObjectURL(wavBlob);
-      const audio = new Audio(url);
-      return { audio, cleanup: () => URL.revokeObjectURL(url) };
+      const ready = await ensurePool(modelId);
+      if (!ready) return null;
+      try {
+        const blob = await pool.dispatch(text, voice, 1.0);
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        return { audio, cleanup: () => URL.revokeObjectURL(url) };
+      } catch (e) {
+        console.error("Voice test error:", e);
+        return null;
+      }
+    },
+
+    // Destroy pool (called on model change to force re-init with new config)
+    destroyPool: () => {
+      pool?.destroy();
+      pool = null;
+      poolFailed = false;
+      poolInitialized = false;
     },
   };
 };
@@ -965,6 +1117,8 @@ GAME RULES:
     const handleSelectModel = async (modelId) => {
       setKokoroModelId(modelId);
       kokoroRef.current = null;
+      const { kokoro } = getProviders();
+      kokoro.destroyPool();
       try { await _store.set("rpg-kokoro-model", modelId); } catch (e) {}
     };
 
