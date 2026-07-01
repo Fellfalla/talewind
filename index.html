@@ -896,7 +896,7 @@ GAME RULES:
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", headers: { "Content-Type": "application/json", "x-api-key": _getAnthropicKey(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: narratorPrompt(), messages }),
+        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 1000, system: narratorPrompt(), messages }),
       });
       if (!response.ok) {
         const errText = await response.text().catch(() => "");
@@ -1141,7 +1141,7 @@ GAME RULES:
                   const r = await fetch("https://api.anthropic.com/v1/messages", {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "x-api-key": k, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-                    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 50, messages: [{ role: "user", content: "Say OK" }] }),
+                    body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 50, messages: [{ role: "user", content: "Say OK" }] }),
                   });
                   if (r.ok) { setApiTestResult("\u2705 Connection successful!"); setAnthropicKey(k); try { await _store.set("rpg-anthropic-key", k); } catch(e){} }
                   else if (r.status === 401) setApiTestResult("\u274c Invalid API key");
@@ -1386,7 +1386,7 @@ GAME RULES:
               try {
                 const resp = await fetch("https://api.anthropic.com/v1/messages", {
                   method: "POST", headers: { "Content-Type": "application/json", "x-api-key": _getAnthropicKey(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-                  body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 300,
+                  body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 300,
                     messages: [{ role: "user", content: `Generate a brief, compelling 2-3 sentence backstory for a ${cc.race} ${cc.charClass} named ${cc.name} in a ${SCENARIOS.find(s => s.id === scenario)?.name || "fantasy"} setting. Make it personal, with a clear motivation and a hint of darkness or conflict. Be concise.` }]
                   }),
                 });
